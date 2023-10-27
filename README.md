@@ -1,4 +1,4 @@
-# Vocos
+# Voxos
 
 Fall 2023 6.205 final project.
 
