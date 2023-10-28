@@ -2,6 +2,9 @@
 
 # iverilog output files
 *.out
-
-# value change dumps
 *.vcd
+
+# vivado
+vivado.log
+*.rpt
+
