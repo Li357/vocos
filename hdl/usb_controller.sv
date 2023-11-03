@@ -23,9 +23,12 @@ module max3421_write(
   output logic clk_out,
   output logic done_out
 );
-  typedef enum {WRITING, WAITING} state_t;
+  localparam HOLD_CYCLES = 5; // the max3421 can be driven up to 26MHz, and needs >=200ns between commands
+
+  typedef enum {WRITING, HOLDING, WAITING} state_t;
   state_t state;
 
+  logic [2:0] hold_count;
   logic [4:0] msg_index;
   logic clk_on;
   assign clk_out = clk_on ? clk_in : 0;
@@ -33,7 +36,6 @@ module max3421_write(
   always_ff @(posedge clk_in) begin
     if (rst_in) begin
       state <= WAITING;
-      mosi_out <= 0;
       done_out <= 0;
       n_ss_out <= 1;
       clk_on <= 0;
@@ -51,17 +53,29 @@ module max3421_write(
         end
         WRITING: begin
           if (msg_index == 16) begin
-            state <= WAITING;
+            state <= HOLDING;
             clk_on <= 0;
             n_ss_out <= 1;
-            done_out <= 1;
           end else begin
             clk_on <= 1;
             msg_index <= msg_index + 1;
-            mosi_out <= msg_in[msg_index];
           end
         end
+        HOLDING: begin
+          if (hold_count == HOLD_CYCLES) begin
+            done_out <= 1;
+            state <= WAITING;
+          end else hold_count <= hold_count + 1;
+        end
       endcase
+    end
+  end
+
+  always_ff @(negedge clk_in) begin
+    if (rst_in) begin
+      mosi_out <= 0;
+    end else if (state == WRITING) begin
+      mosi_out <= msg_in[msg_index];
     end
   end
 endmodule
@@ -159,8 +173,6 @@ module usb_controller(
   logic [31:0] wait_count;
   logic clk_on;
 
-  // logic writing
-
   logic writing;
   logic writer_done;
   logic writer_clk;
@@ -189,7 +201,6 @@ module usb_controller(
       INIT_SET_CONNDETECT: msg = CONNDETECT_MSG;
       INIT_SET_HOSTMODE:   msg = HOSTMODE_MSG;
       INIT_SET_SAMPLEBUS:  msg = SAMPLEBUS_MSG;
-      READ_RCV_FIFO:       msg = READ_RCV_FIFO_MSG;
       default:             msg = 16'b0;
     endcase
   end
@@ -208,113 +219,41 @@ module usb_controller(
           writing <= 1;
         end
 
-        // Step 1: set GPOUT0 which is connected to PRT_CTL and enables USB 5V
-        INIT_SET_POWER: begin
-          if (writer_done) begin
-            writing <= 0;
-            state <= INIT_SET_POWER_FINISH;
-          end
-        end
-
-        INIT_SET_POWER_FINISH: begin
-          // we need at least 200ns of time between commands
-          if (wait_count == 100) begin
-            state <= INIT;
-            wait_count <= 0;
-          end else begin
-            wait_count <= wait_count + 1;
-          end
-        end
-
-        // // Step 2: set full-duplex mode, interrupt level and GPXB for bus activity
+        // Step 1: set full-duplex mode, interrupt level and GPXB for bus activity
         INIT_SET_FULLDUPLEX: begin
           if (writer_done) begin
-            writing <= 0;
-            state <= INIT_SET_FULLDUPLEX_FINISH;
+            state <= INIT_SET_POWER;
           end
         end
 
-        INIT_SET_FULLDUPLEX_FINISH: begin
-          // we need at least 200ns of time between commands
-          if (wait_count == 100) begin
-            state <= INIT;
-            wait_count <= 0;
-          end else begin
-            wait_count <= wait_count + 1;
+        // Step 2: set GPOUT0 which is connected to PRT_CTL and enables USB 5V
+        INIT_SET_POWER: begin
+          if (writer_done) begin
+            state <= INIT_SET_HOSTMODE;
           end
         end
 
-        // // Step 3: set HOST mode bit, pulldowns, GPIN IRQ on GPX
-        // INIT_SET_HOSTMODE: begin
-        //   if (msg_index == 16) begin
-        //     state <= INIT_SET_HOSTMODE_FINISH;
-        //     clk_on <= 0;
-        //     ss_out <= 1;
-        //   end else begin
-        //     clk_on <= 1;
-        //     msg_index <= msg_index + 1;
-        //     mosi_out <= msg[msg_index];
-        //   end
-        // end
+        // Step 3: set HOST mode bit, pulldowns, GPIN IRQ on GPX
+        INIT_SET_HOSTMODE: begin
+          if (writer_done) begin
+            state <= INIT_SET_CONNDETECT;
+          end
+        end
 
-        // INIT_SET_HOSTMODE_FINISH: begin
-        //   if (wait_count == 100) begin
-        //     state <= INIT_SET_CONNDETECT;
-        //     ss_out <= 0;
-        //     wait_count <= 0;
-        //     msg_index <= 0;
-        //   end else begin
-        //     wait_count <= wait_count + 1;
-        //   end
-        // end
+        // Step 4: set connection detection
+        INIT_SET_CONNDETECT: begin
+          if (writer_done) begin
+            state <= INIT_SET_SAMPLEBUS;
+          end
+        end
 
-        // // Step 4: set connection detection
-        // INIT_SET_CONNDETECT: begin
-        //   if (msg_index == 16) begin
-        //     state <= INIT_SET_CONNDETECT_FINISH;
-        //     clk_on <= 0;
-        //     ss_out <= 1;
-        //   end else begin
-        //     clk_on <= 1;
-        //     msg_index <= msg_index + 1;
-        //     mosi_out <= msg[msg_index];
-        //   end
-        // end
-
-        // INIT_SET_CONNDETECT_FINISH: begin
-        //   if (wait_count == 100) begin
-        //     state <= INIT_SET_SAMPLEBUS;
-        //     ss_out <= 0;
-        //     msg_index <= 0;
-        //     wait_count <= 0;
-        //   end else begin
-        //     wait_count <= wait_count + 1;
-        //   end
-        // end
-
-        // // Step 5: set JSTATUS and KSTATUS bits
-        // INIT_SET_SAMPLEBUS: begin
-        //   if (msg_index == 16) begin
-        //     state <= INIT_SET_SAMPLEBUS_FINISH;
-        //     clk_on <= 0;
-        //     ss_out <= 1;
-        //   end else begin
-        //     clk_on <= 1;
-        //     msg_index <= msg_index + 1;
-        //     mosi_out <= msg[msg_index];
-        //   end
-        // end
+        // Step 5: set JSTATUS and KSTATUS bits
+        INIT_SET_SAMPLEBUS: begin
+          if (writer_done) begin
+            state <= WAITING;
+          end
+        end
         
-        // INIT_SET_SAMPLEBUS_FINISH: begin
-        //   if (wait_count == 100) begin
-        //     state <= READ_RCV_FIFO;
-        //     ss_out <= 0;
-        //     msg_index <= 0;
-        //     wait_count <= 0;
-        //   end else begin
-        //     wait_count <= wait_count + 1;
-        //   end
-        // end
 
         // // Step 6: read the receive buffer
         // READ_RCV_FIFO: begin
