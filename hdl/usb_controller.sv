@@ -13,131 +13,16 @@ function [7:0] flip8(input [7:0] data);
   end
 endfunction
 
-module max3421_write(
-  input wire clk_in,
-  input wire rst_in,
-  input wire [15:0] msg_in,
-  input wire valid_in,
-  output logic n_ss_out,
-  output logic mosi_out,
-  output logic clk_out,
-  output logic done_out
-);
-  localparam HOLD_CYCLES = 5; // the max3421 can be driven up to 26MHz, and needs >=200ns between commands
-
-  typedef enum {WRITING, HOLDING, WAITING} state_t;
-  state_t state;
-
-  logic [2:0] hold_count;
-  logic [4:0] msg_index;
-  logic clk_on;
-  assign clk_out = clk_on ? clk_in : 0;
-
-  always_ff @(posedge clk_in) begin
-    if (rst_in) begin
-      state <= WAITING;
-      done_out <= 0;
-      n_ss_out <= 1;
-      clk_on <= 0;
-      msg_index <= 0;
-    end else begin
-      case (state)
-        WAITING: begin
-          done_out <= 0;
-          if (valid_in && !done_out) begin
-            state <= WRITING;
-            msg_index <= 0;
-            clk_on <= 0;
-            n_ss_out <= 0;
-          end
-        end
-        WRITING: begin
-          if (msg_index == 16) begin
-            state <= HOLDING;
-            clk_on <= 0;
-            n_ss_out <= 1;
-          end else begin
-            clk_on <= 1;
-            msg_index <= msg_index + 1;
-          end
-        end
-        HOLDING: begin
-          if (hold_count == HOLD_CYCLES) begin
-            done_out <= 1;
-            state <= WAITING;
-          end else hold_count <= hold_count + 1;
-        end
-      endcase
-    end
-  end
-
-  always_ff @(negedge clk_in) begin
-    if (rst_in) begin
-      mosi_out <= 0;
-    end else if (state == WRITING) begin
-      mosi_out <= msg_in[msg_index];
-    end
-  end
-endmodule
-
-// module max3421_read(
-//   input wire clk_in,
-//   input wire rst_in,
-//   input wire mosi_in,
-//   input wire [8:0] msg_in,
-//   input wire valid_in,
-//   output logic n_ss_out,
-//   output logic mosi_out,
-//   output logic clk_out,
-//   output logic valid_out,
-//   output logic [7:0]
-// );
-//   typedef enum {WRITING, READING, WAITING} state_t;
-//   state_t state; 
-
-//   logic [3:0] msg_index;
-//   logic clk_on;
-//   assign clk_out = clk_on ? clk_in : 0;
-
-//   always_ff @(posedge clk_in) begin
-//     if (rst_in) begin
-//       state <= WAITING;
-//     end else begin
-//       case (state)
-//         WAITING: begin
-//           if (valid_in) begin
-//             state <= WRITING;
-//             msg_index <= 0;
-//             clk_on <= 0;
-//             n_ss_out <= 0;
-//           end
-//         end
-//         WRITING: begin
-//           if (msg_index == 16) begin
-//             state <= WAITING;
-//             clk_on <= 0;
-//             n_ss_out <= 1;
-//           end else begin
-//             clk_on <= 1;
-//             msg_index <= msg_index + 1;
-//             mosi_out <= msg_in[msg_index];
-//           end
-//         end
-//       endcase
-//     end
-//   end
-// module
-
 module usb_controller(
   input wire   clk_in,
   input wire   rst_in,
   input wire   int_in,
   input wire   miso_in,
-  output logic rst_out,
-  output logic ss_out,
+  output logic n_rst_out,
+  output logic n_ss_out,
   output logic mosi_out,
   output logic clk_out,
-  output logic [15:0] bytes_out
+  output logic [7:0] byte_out
 );
 
   // Based off of https://github.com/calvinlclee3/fpga_soc/blob/master/software/text_mode_vga/usb_kb/MAX3421E.c
@@ -145,17 +30,13 @@ module usb_controller(
   typedef enum {
     INIT,
     INIT_SET_FULLDUPLEX,
-    INIT_SET_FULLDUPLEX_FINISH,
     INIT_SET_POWER,
-    INIT_SET_POWER_FINISH,
     INIT_SET_HOSTMODE,
-    INIT_SET_HOSTMODE_FINISH,
     INIT_SET_CONNDETECT,
-    INIT_SET_CONNDETECT_FINISH,
     INIT_SET_SAMPLEBUS,
-    INIT_SET_SAMPLEBUS_FINISH,
-    READ_RCV_FIFO,
-    READ_RCV_FIFO_FINISH,
+
+    READ_JK,
+
     WAITING
   } state_t;
   state_t state;
@@ -166,12 +47,11 @@ module usb_controller(
   localparam HOSTMODE_MSG       = flip16({5'd27, 3'b010, 8'b11010001});
   localparam CONNDETECT_MSG     = flip16({5'd26, 3'b010, 8'b00100000});
   localparam SAMPLEBUS_MSG      = flip16({5'd29, 3'b010, 8'b00000100});
-  localparam READ_RCV_FIFO_MSG  = flip8({5'd1, 3'b000});
+  
+  localparam READ_JK_MSG = flip8({5'd18, 3'b000});
 
-  logic [15:0] msg;
-  logic [15:0] msg_index;
-  logic [31:0] wait_count;
-  logic clk_on;
+  logic [15:0] write_msg;
+  logic [7:0]  read_msg;
 
   logic writing;
   logic writer_done;
@@ -182,7 +62,7 @@ module usb_controller(
   max3421_write writer(
     .clk_in(clk_in),
     .rst_in(rst_in),
-    .msg_in(msg),
+    .msg_in(write_msg),
     .valid_in(writing),
     .n_ss_out(writer_n_ss),
     .mosi_out(writer_mosi),
@@ -190,31 +70,56 @@ module usb_controller(
     .done_out(writer_done)
   );
 
-  assign clk_out = writing ? writer_clk : 0;
-  assign mosi_out = writing ? writer_mosi : 0;
-  assign ss_out = writing ? writer_n_ss : 1;
+  logic reading;
+  logic reader_clk;
+  logic reader_mosi;
+  logic reader_n_ss;
+  logic reader_valid;
+  logic [7:0] reader_byte;
+
+  max3421_read reader(
+    .clk_in(clk_in),
+    .rst_in(rst_in),
+    .miso_in(miso_in),
+    .msg_in(read_msg),
+    .valid_in(reading),
+    .n_ss_out(reader_n_ss),
+    .mosi_out(reader_mosi),
+    .clk_out(reader_clk),
+    .valid_out(reader_valid),
+    .byte_out(reader_byte)
+  );
+
+  assign clk_out = writing ? writer_clk : (reading ? reader_clk : 0);
+  assign mosi_out = writing ? writer_mosi : (reading ? reader_mosi : 0);
+  assign n_ss_out = writing ? writer_n_ss : (reading ? reader_n_ss : 1);
 
   always_comb begin
     case (state)
-      INIT_SET_FULLDUPLEX: msg = FULLDUPLEX_MSG;
-      INIT_SET_POWER:      msg = POWER_MSG;
-      INIT_SET_CONNDETECT: msg = CONNDETECT_MSG;
-      INIT_SET_HOSTMODE:   msg = HOSTMODE_MSG;
-      INIT_SET_SAMPLEBUS:  msg = SAMPLEBUS_MSG;
-      default:             msg = 16'b0;
+      INIT_SET_FULLDUPLEX: write_msg = FULLDUPLEX_MSG;
+      INIT_SET_POWER:      write_msg = POWER_MSG;
+      INIT_SET_CONNDETECT: write_msg = CONNDETECT_MSG;
+      INIT_SET_HOSTMODE:   write_msg = HOSTMODE_MSG;
+      INIT_SET_SAMPLEBUS:  write_msg = SAMPLEBUS_MSG;
+      default:             write_msg = 16'b0;
+    endcase
+  end
+
+  always_comb begin
+    case (state)
+      READ_JK: read_msg = READ_JK_MSG;
+      default: read_msg = 8'b0;
     endcase
   end
 
   always_ff @(posedge clk_in) begin
     if (rst_in) begin
       state <= INIT;
-      writing <= 0;
-      rst_out <= 0;
+      n_rst_out <= 0;
     end else begin
       case (state)
         INIT: begin
-          rst_out <= 1;
-          wait_count <= 0;
+          n_rst_out <= 1;
           state <= INIT_SET_FULLDUPLEX;
           writing <= 1;
         end
@@ -250,39 +155,23 @@ module usb_controller(
         // Step 5: set JSTATUS and KSTATUS bits
         INIT_SET_SAMPLEBUS: begin
           if (writer_done) begin
+            writing <= 0;
+            state <= READ_JK;
+            reading <= 1;
+          end
+        end
+
+        READ_JK: begin
+          if (reader_valid) begin
+            byte_out <= reader_byte;
+            reading <= 0;
             state <= WAITING;
           end
         end
-        
-
-        // // Step 6: read the receive buffer
-        // READ_RCV_FIFO: begin
-        //   if (msg_index == 8 + 2 * 8) begin
-        //     state <= READ_RCV_FIFO_FINISH;
-        //     clk_on <= 0;
-        //     ss_out <= 1;
-        //   end else if (msg_index < 8) begin
-        //     clk_on <= 1;
-        //     mosi_out <= msg[msg_index];
-        //   end else begin
-        //     bytes_out[msg_index - 8] <= miso_in;
-        //   end
-        //   msg_index <= msg_index + 1;
-        // end
-
-        // READ_RCV_FIFO_FINISH: begin
-        //   if (wait_count == 500000) begin
-        //     state <= READ_RCV_FIFO;
-        //     ss_out <= 0;
-        //     msg_index <= 0;
-        //     wait_count <= 0;
-        //   end else begin
-        //     wait_count <= wait_count + 1;
-        //   end
-        // end
 
         WAITING: begin
-
+          state <= READ_JK;
+          reading <= 1;
         end
       endcase
     end

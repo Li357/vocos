@@ -142,9 +142,9 @@ set_property -dict {PACKAGE_PIN J16 IOSTANDARD LVCMOS33}  [ get_ports "pmodb[7]"
 # USB_INT
 set_property -dict { PACKAGE_PIN T13   IOSTANDARD LVCMOS33 } [get_ports { usb_int }]; #IO_L22N_T3_A04_D20_14        Sch=jd7/ck_io[29]
 # USB_SS_B
-set_property -dict { PACKAGE_PIN T12   IOSTANDARD LVCMOS33 } [get_ports { usb_ss }]; #IO_L22P_T3_A05_D21_14        Sch=jd4/ck_io[30]
+set_property -dict { PACKAGE_PIN T12   IOSTANDARD LVCMOS33 } [get_ports { usb_n_ss }]; #IO_L22P_T3_A05_D21_14        Sch=jd4/ck_io[30]
 # USB_RESET_B
-set_property -dict { PACKAGE_PIN V13   IOSTANDARD LVCMOS33 } [get_ports { usb_rst }]; #IO_L21N_T3_DQS_A06_D22_14    Sch=jd3/ck_io[31]
+set_property -dict { PACKAGE_PIN V13   IOSTANDARD LVCMOS33 } [get_ports { usb_n_rst }]; #IO_L21N_T3_DQS_A06_D22_14    Sch=jd3/ck_io[31]
 # USB_SPI_MISO
 set_property -dict { PACKAGE_PIN U12   IOSTANDARD LVCMOS33 } [get_ports { usb_miso }]; #IO_L21P_T3_DQS_14            Sch=jd2/ck_io[32]
 # USB_SPI_MOSI
