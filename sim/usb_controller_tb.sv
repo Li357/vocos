@@ -38,12 +38,7 @@ module usb_controller_tb();
     #40;
     rst_in = 0;
 
-    #360;
-    for (int i = 7; i >= 0; i--) begin
-      mosi = data[i];
-      #40;
-    end
-    #400
+    #40000;
 
     $display("Finishing");
     $finish;

@@ -21,10 +21,12 @@ module top_level(
   // so we'll use a 25MHz clock here
   logic clk_25mhz;
   logic [5:0] clk_25mhz_count;
-  assign clk_25mhz = clk_25mhz_count == 0;
   always_ff @(posedge clk_100mhz) begin
     if (sys_rst) clk_25mhz_count <= 0;
-    else clk_25mhz_count <= clk_25mhz_count + 1;
+    else begin
+      if (clk_25mhz_count == 15) clk_25mhz <= ~clk_25mhz;
+      clk_25mhz_count <= clk_25mhz_count + 1;
+    end
   end
 
   assign pmoda[0] = usb_miso;
@@ -33,7 +35,7 @@ module top_level(
   assign pmoda[3] = usb_ss;
   assign pmoda[4] = usb_int;
 
-  logic [7:0] out;
+  logic [15:0] out;
 
   usb_controller usbc(
     .clk_in(clk_25mhz),
@@ -44,10 +46,10 @@ module top_level(
     .ss_out(usb_ss),
     .mosi_out(usb_mosi),
     .clk_out(usb_clk),
-    .byte_out(out)
+    .bytes_out(out)
   );
 
-  assign led[7:0] = out;
+  assign led[15:0] = out;
 endmodule
 
 `default_nettype wire
