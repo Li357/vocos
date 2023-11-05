@@ -5,20 +5,20 @@ module usb_controller_tb();
 
   logic clk_in;
   logic rst_in;
-  logic rst_out;
-  logic ss_out;
-  logic mosi;
-  logic [7:0] data;
-  assign data = 8'b10010001;
+  logic n_rst_out;
+  logic n_ss_out;
+  logic mosi_out;
+  logic [7:0] byte_out;
 
   usb_controller uut(
     .clk_in(clk_in),
     .rst_in(rst_in),
     .int_in(1'b0),
     .miso_in(1'b0),
-    .rst_out(rst_out),
-    .ss_out(ss_out),
-    .mosi_out(mosi)
+    .n_rst_out(n_rst_out),
+    .n_ss_out(n_ss_out),
+    .mosi_out(mosi_out),
+    .byte_out(byte_out)
   );
 
   always begin

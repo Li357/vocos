@@ -32,83 +32,103 @@ module usb_controller(
     INIT_SET_FULLDUPLEX,
     INIT_SET_POWER,
     INIT_SET_HOSTMODE,
-    INIT_SET_CONNDETECT,
-    INIT_SET_SAMPLEBUS,
+    INIT_ENABLE_INTERRUPTS,
 
-    READ_JK,
+    SETUP_SET_PERADDR,
+    SETUP_SET_CONFIG,
+
+    POLL_BULK_IN,
+    DEENCAPSULATE_MIDI,
 
     WAITING
   } state_t;
   state_t state;
 
-  // the MAX3421E expects MSB first
-  localparam FULLDUPLEX_MSG     = flip16({5'd17, 3'b010, 8'b00011010});
-  localparam POWER_MSG          = flip16({5'd20, 3'b010, 8'b00000001});
-  localparam HOSTMODE_MSG       = flip16({5'd27, 3'b010, 8'b11010001});
-  localparam CONNDETECT_MSG     = flip16({5'd26, 3'b010, 8'b00100000});
-  localparam SAMPLEBUS_MSG      = flip16({5'd29, 3'b010, 8'b00000100});
+  // typedef enum {
+  //   SPINNING,
+  //   HANDLING
+  // } irq_state_t;
+  // irq_state_t irq_state;
+
+  localparam READ  = 3'b000;
+  localparam WRITE = 3'b010;
+
+  // the MAX3421E expects MSB first so we'll flip the bits
+  // PINCTL  FDUPSPI | POSINT
+  localparam logic [7:0] FULLDUPLEX_MSG [63:0]        = '{0: flip8({5'd17, WRITE}), 1: flip8(8'b00010100), default: '0};
+  // IOPINS1 GPOUT0
+  localparam logic [7:0] POWER_MSG [63:0]             = '{0: flip8({5'd20, WRITE}), 1: flip8(8'b00000001), default: '0};
+  // MODE    SEPIRQ | HOST
+  localparam logic [7:0] HOSTMODE_MSG [63:0]          = '{0: flip8({5'd27, WRITE}), 1: flip8(8'b00010001), default: '0};
+  // HIEN    HXFRDNIE | SNDBAVIE | RCVDAVIE
+  localparam logic [7:0] ENABLE_INTERRUPTS_MSG [63:0] = '{0: flip8({5'd26, WRITE}), 1: flip8(8'b10001100), default: '0}; 
+  //localparam logic [7:0] READING_MSG [63:0] = '{0: flip8({5'd18, READ}), default: '0};
+  // localparam ENABLE_INTERRUPT_PIN_MSG = flip16({5'd16, 3'b010, 8'b00000001}); // CPUCTL  IE
   
-  localparam READ_JK_MSG = flip8({5'd18, 3'b000});
+  //localparam SETUP_SET_PERADDR_HXFR   = flip16({5'd})
 
-  logic [15:0] write_msg;
-  logic [7:0]  read_msg;
+  // localparam HOST_TRANSFER_DONE_IRQ = flip(8'b10000000);
+  // localparam HOST_TRANSFER_DONE_IRQ = flip(8'b10000000);
 
-  logic writing;
-  logic writer_done;
-  logic writer_clk;
-  logic writer_mosi;
-  logic writer_n_ss;
+  logic txing;
+  logic [7:0] tx_snd_bytes [63:0];
+  logic [6:0] tx_snd_byte_count;
+  logic tx_n_ss;
+  logic tx_mosi;
+  logic tx_clk;
+  logic tx_rcv_byte_valid;
+  logic [7:0] tx_rcv_bytes [63:0];
+  logic [6:0] tx_byte_count;
+  logic tx_finished;
 
-  max3421_write writer(
-    .clk_in(clk_in),
-    .rst_in(rst_in),
-    .msg_in(write_msg),
-    .valid_in(writing),
-    .n_ss_out(writer_n_ss),
-    .mosi_out(writer_mosi),
-    .clk_out(writer_clk),
-    .done_out(writer_done)
-  );
+  logic [7:0] wait_count;
 
-  logic reading;
-  logic reader_clk;
-  logic reader_mosi;
-  logic reader_n_ss;
-  logic reader_valid;
-  logic [7:0] reader_byte;
-
-  max3421_read reader(
+  max3421_spi spi(
     .clk_in(clk_in),
     .rst_in(rst_in),
     .miso_in(miso_in),
-    .msg_in(read_msg),
-    .valid_in(reading),
-    .n_ss_out(reader_n_ss),
-    .mosi_out(reader_mosi),
-    .clk_out(reader_clk),
-    .valid_out(reader_valid),
-    .byte_out(reader_byte)
+    .bytes_in(tx_snd_bytes),
+    .bytes_in_count(tx_snd_byte_count),
+    .valid_in(txing),
+    .n_ss_out(tx_n_ss),
+    .mosi_out(tx_mosi),
+    .clk_out(tx_clk),
+    .valid_out(tx_rcv_byte_valid),
+    .bytes_out(tx_rcv_bytes),
+    .byte_count(tx_byte_count),
+    .finished_out(tx_finished)
   );
 
-  assign clk_out = writing ? writer_clk : (reading ? reader_clk : 0);
-  assign mosi_out = writing ? writer_mosi : (reading ? reader_mosi : 0);
-  assign n_ss_out = writing ? writer_n_ss : (reading ? reader_n_ss : 1);
+  assign clk_out  = txing ? tx_clk  : 0;
+  assign mosi_out = txing ? tx_mosi : 0;
+  assign n_ss_out = txing ? tx_n_ss : 1;
 
   always_comb begin
     case (state)
-      INIT_SET_FULLDUPLEX: write_msg = FULLDUPLEX_MSG;
-      INIT_SET_POWER:      write_msg = POWER_MSG;
-      INIT_SET_CONNDETECT: write_msg = CONNDETECT_MSG;
-      INIT_SET_HOSTMODE:   write_msg = HOSTMODE_MSG;
-      INIT_SET_SAMPLEBUS:  write_msg = SAMPLEBUS_MSG;
-      default:             write_msg = 16'b0;
-    endcase
-  end
-
-  always_comb begin
-    case (state)
-      READ_JK: read_msg = READ_JK_MSG;
-      default: read_msg = 8'b0;
+      INIT_SET_FULLDUPLEX: begin
+        tx_snd_bytes = FULLDUPLEX_MSG;
+        tx_snd_byte_count = 2;
+      end
+      INIT_SET_POWER: begin
+        tx_snd_bytes = POWER_MSG;
+        tx_snd_byte_count = 2;
+      end
+      INIT_SET_HOSTMODE: begin
+        tx_snd_bytes = HOSTMODE_MSG;
+        tx_snd_byte_count = 2;
+      end
+      INIT_ENABLE_INTERRUPTS: begin
+        tx_snd_bytes = ENABLE_INTERRUPTS_MSG;
+        tx_snd_byte_count = 2;
+      end
+      SETUP_SET_PERADDR: begin
+        tx_snd_bytes = '{default: flip8({5'd18, 3'b000})};
+        tx_snd_byte_count = 2;
+      end
+      default: begin
+        tx_snd_bytes = {default: '0};
+        tx_snd_byte_count = 0;
+      end
     endcase
   end
 
@@ -121,58 +141,101 @@ module usb_controller(
         INIT: begin
           n_rst_out <= 1;
           state <= INIT_SET_FULLDUPLEX;
-          writing <= 1;
+          wait_count <= 0;
         end
 
-        // Step 1: set full-duplex mode, interrupt level and GPXB for bus activity
+        // Step 0.1: set full-duplex mode and POSINT
         INIT_SET_FULLDUPLEX: begin
-          if (writer_done) begin
+          if (tx_finished) begin
+            txing <= 0;
             state <= INIT_SET_POWER;
-          end
+          end txing <= 1;
         end
 
-        // Step 2: set GPOUT0 which is connected to PRT_CTL and enables USB 5V
+        // Step 0.2: set GPOUT0 which is connected to PRT_CTL and enables USB 5V
         INIT_SET_POWER: begin
-          if (writer_done) begin
-            state <= INIT_SET_HOSTMODE;
-          end
+          if (tx_finished) begin
+            txing <= 0;
+            state <= SETUP_SET_PERADDR;
+          end txing <= 1;
         end
 
-        // Step 3: set HOST mode bit, pulldowns, GPIN IRQ on GPX
-        INIT_SET_HOSTMODE: begin
-          if (writer_done) begin
-            state <= INIT_SET_CONNDETECT;
-          end
+        // Step 0.3: set HOST mode and SEPIRQ (no GPIN interrupts on int_in)
+        // INIT_SET_HOSTMODE: begin
+        //   if (tx_byte_count == 2) begin
+        //     txing <= 0;
+        //     if (!txing) state <= INIT_ENABLE_INTERRUPTS;
+        //   end else txing <= 1;
+        // end
+
+        // // Step 0.4: enable interrupts for sends and receives
+        // INIT_ENABLE_INTERRUPTS: begin
+        //   if (tx_byte_count == 2) begin
+        //     txing <= 0;
+        //     if (!txing) state <= SETUP_SET_PERADDR;
+        //   end else txing <= 1;
+        // end
+
+        // Step 0.4.5: enable interrupt pin (int_in)
+        // NOTE because the RealDigital Urbana board doesn't have a pullup resistor connected to
+        // the MAX3421E's V_L, this is edge-active and I've set POSINT=1. See Figure 12 in the datasheet
+        // INIT_ENABLE_INTERRUPT_PIN: begin
+        //   if (writer_done) begin
+        //     writing <= 0;
+        //     state <= WAITING;
+        //   end
+        // end
+
+        // Next, we would usually also set DPPULLDP/N pulldown bits to allow for peripheral connection detection
+        // and then set CONDETIE (connection interrupt enable). Then we'd sample the bus (set SAMPLEBUS bit) and
+        // check the J/K status bit to see if it was a connect/disconnect and if it's a high/low speed peripheral.
+        // Then we would start sending SETUP packets to identify the peripheral type (i.e. MIDI controller brand and
+        // model) but I'm going to keep that as part of the stretch goal.
+
+        // Let's start setting up USB!
+        
+        // Step 1.1: set peripheral address. We need to clock in 8 bytes into SUDFIFO:
+        // bmRequestType  SET_ADDRESS  Device Address  wIndex  wLength
+        // 0x00           0x05         0x0001          0x0000  0x0000
+        // Then clock in 0x10 to HXFR to send the SETUP packet
+        // Then clock in 0x80 to HXFR to send the STATUS HS-IN packet
+        // Then we'll check for HXFRDNIRQ on finish and clear
+        SETUP_SET_PERADDR: begin
+          if (tx_rcv_byte_valid) byte_out <= tx_rcv_bytes[tx_byte_count];
+
+          if (tx_finished) begin
+            txing <= 0;
+            state <= SETUP_SET_PERADDR;
+          end txing <= 1;
         end
 
-        // Step 4: set connection detection
-        INIT_SET_CONNDETECT: begin
-          if (writer_done) begin
-            state <= INIT_SET_SAMPLEBUS;
-          end
+        // Step 1.2 set configuration descriptor. I'm just guessing its configuration 1 from
+        // running Wireshark on my AKAI MK3. Maybe in the future I'll do a GET_CONFIGURATION
+        // bmRequestType  SET_CONFIGURATION  Config Value  wIndex  wLength
+        // 0x00           0x09               0x0001        0x0000  0x0000
+        // Then clock in 0x10 to HXFR
+        // Then 0x80
+        // Then check for HXFRDNIRQ and clear
+        SETUP_SET_CONFIG: begin
+
         end
 
-        // Step 5: set JSTATUS and KSTATUS bits
-        INIT_SET_SAMPLEBUS: begin
-          if (writer_done) begin
-            writing <= 0;
-            state <= READ_JK;
-            reading <= 1;
-          end
+        // Step 2.1: send BULK IN packet to ask for data every so often
+        // Clock in 0x01 (device address is last 4 bits) to HXFR
+        // Check for HXFRDNIRQ and HSLRT for errors
+        // If none, read RCVBC for byte count and read that many bytes from RCVFIFO
+        // Clear RCVDAVIRQ
+        POLL_BULK_IN: begin
+
         end
 
-        READ_JK: begin
-          if (reader_valid) begin
-            byte_out <= reader_byte;
-            reading <= 0;
-            state <= WAITING;
-          end
+        // Step 2.2: de-encapsulate MIDI data!!!
+        // send 4-byte MIDI packets downstream!!!
+        DEENCAPSULATE_MIDI: begin
+
         end
 
-        WAITING: begin
-          state <= READ_JK;
-          reading <= 1;
-        end
+        WAITING: ;
       endcase
     end
   end

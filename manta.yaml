@@ -1,0 +1,15 @@
+---
+cores:
+
+  lab8_io_core:
+    type: io
+
+    inputs:
+      misobyte_in: 8
+      mosibyte_in: 8
+
+uart:
+  port: "/dev/cu.usbserial-88742923013A1"
+  baudrate: 3000000
+  clock_freq: 100000000
+

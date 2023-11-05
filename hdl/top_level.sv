@@ -6,12 +6,14 @@ module top_level(
   input wire [3:0]    btn,
   input wire          usb_int,
   input wire          usb_miso,
+  input wire          uart_rxd,
   output logic        usb_n_rst,
   output logic        usb_n_ss,
   output logic        usb_mosi,
   output logic        usb_clk,
   output logic [15:0] led,
-  output logic [7:0]  pmoda
+  output logic [7:0]  pmoda,
+  output logic        uart_txd
 );
 
   logic sys_rst;

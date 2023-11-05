@@ -222,5 +222,10 @@ set_property -dict { PACKAGE_PIN V14   IOSTANDARD LVCMOS33 } [get_ports { usb_cl
 #set_property -dict { PACKAGE_PIN L14   IOSTANDARD LVCMOS33 } [get_ports { qspi_dq[2] }]; #IO_L2P_T0_D02_14 Sch=qspi_dq[2]
 #set_property -dict { PACKAGE_PIN M15   IOSTANDARD LVCMOS33 } [get_ports { qspi_dq[3] }]; #IO_L2N_T0_D03_14 Sch=qspi_dq[3]
 
+# uart pins for working with manta:
+set_property PACKAGE_PIN B16 [ get_ports "uart_rxd"]
+set_property PACKAGE_PIN A16 [ get_ports "uart_txd"]
+set_property IOSTANDARD LVCMOS33 [ get_ports "uart*"]
+
 set_property BITSTREAM.CONFIG.UNUSEDPIN PULLUP [current_design]
 set_property BITSTREAM.GENERAL.COMPRESS TRUE [current_design]
