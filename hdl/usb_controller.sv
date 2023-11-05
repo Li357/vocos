@@ -34,8 +34,23 @@ module usb_controller(
     INIT_SET_HOSTMODE,
     INIT_ENABLE_INTERRUPTS,
 
-    SETUP_SET_PERADDR,
-    SETUP_SET_CONFIG,
+    SETUP_SET_PERADDR_SUDFIFO,
+    SETUP_SET_PERADDR_HXFR,
+    SETUP_SET_PERADDR_WAIT,
+    SETUP_SET_PERADDR_READ,
+    SETUP_SET_PERADDR_CLEAR,
+    SETUP_SET_PERADDR_STATUS,
+    SETUP_SET_PERADDR_FINISH,
+
+    SETUP_SET_CONFIG_SUDFIFO,
+    SETUP_SET_CONFIG_HXFR,
+    SETUP_SET_CONFIG_WAIT,
+    SETUP_SET_CONFIG_READ,
+    SETUP_SET_CONFIG_CLEAR,
+    SETUP_SET_CONFIG_STATUS,
+    SETUP_SET_CONFIG_FINISH,
+
+    POLL_BULK_IN_HXFR,
 
     POLL_BULK_IN,
     DEENCAPSULATE_MIDI,
@@ -44,31 +59,44 @@ module usb_controller(
   } state_t;
   state_t state;
 
-  // typedef enum {
-  //   SPINNING,
-  //   HANDLING
-  // } irq_state_t;
-  // irq_state_t irq_state;
-
   localparam READ  = 3'b000;
   localparam WRITE = 3'b010;
 
   // the MAX3421E expects MSB first so we'll flip the bits
   // PINCTL  FDUPSPI | POSINT
-  localparam logic [7:0] FULLDUPLEX_MSG [63:0]        = '{0: flip8({5'd17, WRITE}), 1: flip8(8'b00010100), default: '0};
+  localparam logic [7:0] FULLDUPLEX_MSG        [63:0] = '{0: flip8({5'd17, WRITE}), 1: flip8(8'b00010100), default: '0};
   // IOPINS1 GPOUT0
-  localparam logic [7:0] POWER_MSG [63:0]             = '{0: flip8({5'd20, WRITE}), 1: flip8(8'b00000001), default: '0};
+  localparam logic [7:0] POWER_MSG             [63:0] = '{0: flip8({5'd20, WRITE}), 1: flip8(8'b00000001), default: '0};
   // MODE    SEPIRQ | HOST
-  localparam logic [7:0] HOSTMODE_MSG [63:0]          = '{0: flip8({5'd27, WRITE}), 1: flip8(8'b00010001), default: '0};
+  localparam logic [7:0] HOSTMODE_MSG          [63:0] = '{0: flip8({5'd27, WRITE}), 1: flip8(8'b00010001), default: '0};
   // HIEN    HXFRDNIE | SNDBAVIE | RCVDAVIE
-  localparam logic [7:0] ENABLE_INTERRUPTS_MSG [63:0] = '{0: flip8({5'd26, WRITE}), 1: flip8(8'b10001100), default: '0}; 
-  //localparam logic [7:0] READING_MSG [63:0] = '{0: flip8({5'd18, READ}), default: '0};
-  // localparam ENABLE_INTERRUPT_PIN_MSG = flip16({5'd16, 3'b010, 8'b00000001}); // CPUCTL  IE
+  localparam logic [7:0] ENABLE_INTERRUPTS_MSG [63:0] = '{0: flip8({5'd26, WRITE}), 1: flip8(8'b10001100), default: '0};
+  // CPUCTL  IE
+  // localparam ENABLE_INTERRUPT_PIN_MSG = flip16({5'd16, 3'b010, 8'b00000001});
   
-  //localparam SETUP_SET_PERADDR_HXFR   = flip16({5'd})
+  localparam logic [7:0] SET_PERADDR_SUDFIFO [63:0] = '{
+    0: flip8({5'd2, WRITE}),
+    1: 8'h00,
+    2: flip8(8'h05),
+    3: 8'h00, 4: flip8(8'h01),
+    5: 8'h00, 6: 8'h00,
+    7: 8'h00, 8: 8'h00,
+    default: '0
+  };
+  localparam logic [7:0] SET_PERADDR_HXFR    [63:0] = '{0: flip8({5'd30, WRITE}), 1: flip8(8'b00010000), default: '0};
+  localparam logic [7:0] SET_PERADDR_READ    [63:0] = '{0: flip8({5'd31, READ}), default: '0};
+  localparam logic [7:0] SET_PERADDR_CLEAR   [63:0] = '{0: flip8({5'd25, WRITE}), 1: flip8(8'b10000000), default: '0};
+  localparam logic [7:0] SET_PERADDR_STATUS  [63:0] = '{0: flip8({5'd30, WRITE}), 1: flip8(8'b10000000), default: '0};
 
-  // localparam HOST_TRANSFER_DONE_IRQ = flip(8'b10000000);
-  // localparam HOST_TRANSFER_DONE_IRQ = flip(8'b10000000);
+  localparam logic [7:0] SET_CONFIG_SUDFIFO [63:0] = '{
+    0: flip8({5'd2, WRITE}),
+    1: 8'h00,
+    2: flip8(8'h09),
+    3: 8'h00, 4: flip8(8'h01),
+    5: 8'h00, 6: 8'h00,
+    7: 8'h00, 8: 8'h00,
+    default: '0
+  };
 
   logic txing;
   logic [7:0] tx_snd_bytes [63:0];
@@ -121,9 +149,28 @@ module usb_controller(
         tx_snd_bytes = ENABLE_INTERRUPTS_MSG;
         tx_snd_byte_count = 2;
       end
-      SETUP_SET_PERADDR: begin
-        tx_snd_bytes = '{default: flip8({5'd18, 3'b000})};
+      SETUP_SET_PERADDR_SUDFIFO: begin
+        tx_snd_bytes = SET_PERADDR_SUDFIFO;
+        tx_snd_byte_count = 9;
+      end
+      SETUP_SET_PERADDR_HXFR,
+      SETUP_SET_CONFIG_HXFR: begin
+        tx_snd_bytes = SET_PERADDR_HXFR;
         tx_snd_byte_count = 2;
+      end
+      SETUP_SET_PERADDR_READ,
+      SETUP_SET_CONFIG_READ: begin
+        tx_snd_bytes = SET_PERADDR_READ;
+        tx_snd_byte_count = 2;
+      end
+      SETUP_SET_PERADDR_CLEAR,
+      SETUP_SET_CONFIG_CLEAR: begin
+        tx_snd_bytes = SET_PERADDR_CLEAR;
+        tx_snd_byte_count = 2;
+      end
+      SETUP_SET_CONFIG_SUDFIFO: begin
+        tx_snd_bytes = SET_CONFIG_SUDFIFO;
+        tx_snd_byte_count = 9;
       end
       default: begin
         tx_snd_bytes = {default: '0};
@@ -142,39 +189,36 @@ module usb_controller(
           n_rst_out <= 1;
           state <= INIT_SET_FULLDUPLEX;
           wait_count <= 0;
+          txing <= 1;
         end
 
         // Step 0.1: set full-duplex mode and POSINT
         INIT_SET_FULLDUPLEX: begin
           if (tx_finished) begin
-            txing <= 0;
             state <= INIT_SET_POWER;
-          end txing <= 1;
+          end
         end
 
         // Step 0.2: set GPOUT0 which is connected to PRT_CTL and enables USB 5V
         INIT_SET_POWER: begin
           if (tx_finished) begin
-            txing <= 0;
-            state <= SETUP_SET_PERADDR;
-          end txing <= 1;
+            state <= INIT_SET_HOSTMODE;
+          end
         end
 
         // Step 0.3: set HOST mode and SEPIRQ (no GPIN interrupts on int_in)
-        // INIT_SET_HOSTMODE: begin
-        //   if (tx_byte_count == 2) begin
-        //     txing <= 0;
-        //     if (!txing) state <= INIT_ENABLE_INTERRUPTS;
-        //   end else txing <= 1;
-        // end
+        INIT_SET_HOSTMODE: begin
+          if (tx_finished) begin
+            state <= INIT_ENABLE_INTERRUPTS;
+          end
+        end
 
-        // // Step 0.4: enable interrupts for sends and receives
-        // INIT_ENABLE_INTERRUPTS: begin
-        //   if (tx_byte_count == 2) begin
-        //     txing <= 0;
-        //     if (!txing) state <= SETUP_SET_PERADDR;
-        //   end else txing <= 1;
-        // end
+        // Step 0.4: enable interrupts for sends and receives
+        INIT_ENABLE_INTERRUPTS: begin
+          if (tx_finished) begin
+            state <= SETUP_SET_PERADDR_SUDFIFO;
+          end
+        end
 
         // Step 0.4.5: enable interrupt pin (int_in)
         // NOTE because the RealDigital Urbana board doesn't have a pullup resistor connected to
@@ -200,13 +244,55 @@ module usb_controller(
         // Then clock in 0x10 to HXFR to send the SETUP packet
         // Then clock in 0x80 to HXFR to send the STATUS HS-IN packet
         // Then we'll check for HXFRDNIRQ on finish and clear
-        SETUP_SET_PERADDR: begin
-          if (tx_rcv_byte_valid) byte_out <= tx_rcv_bytes[tx_byte_count];
-
+        SETUP_SET_PERADDR_SUDFIFO: begin
           if (tx_finished) begin
+            state <= SETUP_SET_PERADDR_HXFR;
+          end
+        end
+
+        SETUP_SET_PERADDR_HXFR: begin
+          if (tx_finished) begin
+            state <= SETUP_SET_PERADDR_WAIT;
             txing <= 0;
-            state <= SETUP_SET_PERADDR;
-          end txing <= 1;
+          end
+        end
+
+        SETUP_SET_PERADDR_WAIT: begin
+          if (wait_count == 18) begin
+            txing <= 1;
+            state <= SETUP_SET_PERADDR_READ;
+            wait_count <= 0;
+          end else wait_count <= wait_count + 1;
+        end
+
+        SETUP_SET_PERADDR_READ: begin
+          if (tx_rcv_byte_valid) begin
+            // If the transfer completed successfully
+            if (tx_rcv_bytes[1][3:0] == 0) begin
+              state <= SETUP_SET_PERADDR_CLEAR;
+            end
+          end
+        end
+
+        SETUP_SET_PERADDR_CLEAR: begin
+          if (tx_finished) begin
+            state <= SETUP_SET_PERADDR_STATUS;
+          end
+        end
+
+        SETUP_SET_PERADDR_STATUS: begin
+          if (tx_finished) begin
+            state <= SETUP_SET_PERADDR_FINISH;
+            txing <= 0;
+          end
+        end
+
+        SETUP_SET_PERADDR_FINISH: begin
+          if (wait_count == 100) begin
+            txing <= 1;
+            state <= SETUP_SET_CONFIG;
+            wait_count <= 0;
+          end wait_count <= wait_count + 1;
         end
 
         // Step 1.2 set configuration descriptor. I'm just guessing its configuration 1 from
@@ -216,8 +302,55 @@ module usb_controller(
         // Then clock in 0x10 to HXFR
         // Then 0x80
         // Then check for HXFRDNIRQ and clear
-        SETUP_SET_CONFIG: begin
+        SETUP_SET_CONFIG_SUDFIFO: begin
+          if (tx_finished) begin
+            state <= SETUP_SET_CONFIG_HXFR;
+          end
+        end
 
+        SETUP_SET_CONFIG_HXFR: begin
+          if (tx_finished) begin
+            state <= SETUP_SET_CONFIG_WAIT;
+            txing <= 0;
+          end
+        end
+
+        SETUP_SET_CONFIG_WAIT: begin
+          if (wait_count == 18) begin
+            txing <= 1;
+            state <= SETUP_SET_CONFIG_READ;
+            wait_count <= 0;
+          end else wait_count <= wait_count + 1;
+        end
+
+        SETUP_SET_CONFIG_READ: begin
+          if (tx_rcv_byte_valid) begin
+            // If the transfer completed successfully
+            if (tx_rcv_bytes[1][3:0] == 0) begin
+              state <= SETUP_SET_CONFIG_CLEAR;
+            end
+          end
+        end
+
+        SETUP_SET_CONFIG_CLEAR: begin
+          if (tx_finished) begin
+            state <= SETUP_SET_CONFIG_STATUS;
+          end
+        end
+
+        SETUP_SET_CONFIG_STATUS: begin
+          if (tx_finished) begin
+            state <= SETUP_SET_CONFIG_FINISH;
+            txing <= 0;
+          end
+        end
+
+        SETUP_SET_CONFIG_FINISH: begin
+          if (wait_count == 100) begin
+            txing <= 1;
+            state <= POLL_BULK_IN_HXFR;
+            wait_count <= 0;
+          end wait_count <= wait_count + 1;
         end
 
         // Step 2.1: send BULK IN packet to ask for data every so often
@@ -225,7 +358,7 @@ module usb_controller(
         // Check for HXFRDNIRQ and HSLRT for errors
         // If none, read RCVBC for byte count and read that many bytes from RCVFIFO
         // Clear RCVDAVIRQ
-        POLL_BULK_IN: begin
+        POLL_BULK_IN_HXFR: begin
 
         end
 
