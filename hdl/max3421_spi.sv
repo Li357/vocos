@@ -42,6 +42,9 @@ module max3421_spi(
       case (state)
         WAITING: begin
           finished_out <= 0;
+          // NOTE: this is written in such a way that you can keep valid_in
+          // high for as long as you're transferring data. The module
+          // will have HOLD_CYCLES + 1 cycles between different transactions 
           if (valid_in) begin
             state <= TXING;
             byte_index <= 0;
@@ -96,7 +99,7 @@ module max3421_spi(
     end
   end
 
-  // IMPORTANT: outputs on MISO and inputs on MOSI need to be
+  // IMPORTANT: outputs on MISO need to be
   // changed on the negative edge of the clock to allow for enough
   // time to correctly sample the value on the clk_out edge
   always_ff @(negedge clk_in) begin

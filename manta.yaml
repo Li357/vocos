@@ -1,12 +1,11 @@
 ---
 cores:
 
-  lab8_io_core:
+  voxos:
     type: io
 
     inputs:
-      misobyte_in: 8
-      mosibyte_in: 8
+      rcv_byte: 32
 
 uart:
   port: "/dev/cu.usbserial-88742923013A1"

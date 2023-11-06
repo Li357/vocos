@@ -1,7 +1,7 @@
 `default_nettype none
 `timescale 1ns/1ps
 /*
-This module was generated with Manta v0.0.5 on 05 Nov 2023 at 12:28:14 by andrewli
+This module was generated with Manta v0.0.5 on 05 Nov 2023 at 15:39:10 by andrewli
 
 If this breaks or if you've got spicy formal verification memes, contact fischerm [at] mit.edu
 
@@ -16,8 +16,7 @@ manta manta_inst (
     .rx(rx),
     .tx(tx),
     
-    .misobyte_in(misobyte_in), 
-    .mosibyte_in(mosibyte_in));
+    .rcv_byte(rcv_byte));
 
 */
 
@@ -27,8 +26,7 @@ module manta (
     input wire rx,
     output reg tx,
     
-    input wire [7:0] misobyte_in,
-    input wire [7:0] mosibyte_in);
+    input wire [31:0] rcv_byte);
 
 
     uart_rx #(.CLOCKS_PER_BAUD(33)) urx (
@@ -47,46 +45,45 @@ module manta (
         .data_i(urx_brx_data),
         .valid_i(urx_brx_valid),
     
-        .addr_o(brx_lab8_io_core_addr),
-        .data_o(brx_lab8_io_core_data),
-        .rw_o(brx_lab8_io_core_rw),
-        .valid_o(brx_lab8_io_core_valid));
-    reg [15:0] brx_lab8_io_core_addr;
-    reg [15:0] brx_lab8_io_core_data;
-    reg brx_lab8_io_core_rw;
-    reg brx_lab8_io_core_valid;
+        .addr_o(brx_voxos_addr),
+        .data_o(brx_voxos_data),
+        .rw_o(brx_voxos_rw),
+        .valid_o(brx_voxos_valid));
+    reg [15:0] brx_voxos_addr;
+    reg [15:0] brx_voxos_data;
+    reg brx_voxos_rw;
+    reg brx_voxos_valid;
     
 
-    lab8_io_core lab8_io_core_inst (
+    voxos voxos_inst (
         .bus_clk(clk),
         .user_clk(clk),
     
         // ports
-        .misobyte_in(misobyte_in),
-        .mosibyte_in(mosibyte_in),
+        .rcv_byte(rcv_byte),
     
         // input port
-        .addr_i(brx_lab8_io_core_addr),
-        .data_i(brx_lab8_io_core_data),
-        .rw_i(brx_lab8_io_core_rw),
-        .valid_i(brx_lab8_io_core_valid),
+        .addr_i(brx_voxos_addr),
+        .data_i(brx_voxos_data),
+        .rw_i(brx_voxos_rw),
+        .valid_i(brx_voxos_valid),
     
         // output port
         .addr_o(),
-        .data_o(lab8_io_core_btx_data),
-        .rw_o(lab8_io_core_btx_rw),
-        .valid_o(lab8_io_core_btx_valid));
+        .data_o(voxos_btx_data),
+        .rw_o(voxos_btx_rw),
+        .valid_o(voxos_btx_valid));
 
     
-    reg [15:0] lab8_io_core_btx_data;
-    reg lab8_io_core_btx_rw;
-    reg lab8_io_core_btx_valid;
+    reg [15:0] voxos_btx_data;
+    reg voxos_btx_rw;
+    reg voxos_btx_valid;
     bridge_tx btx (
         .clk(clk),
     
-        .data_i(lab8_io_core_btx_data),
-        .rw_i(lab8_io_core_btx_rw),
-        .valid_i(lab8_io_core_btx_valid),
+        .data_i(voxos_btx_data),
+        .rw_i(voxos_btx_rw),
+        .valid_i(voxos_btx_valid),
     
         .data_o(btx_utx_data),
         .start_o(btx_utx_start),
@@ -311,13 +308,12 @@ module bridge_rx (
 `endif // FORMAL
 endmodule
 
-module lab8_io_core (
+module voxos (
     input wire bus_clk,
     input wire user_clk,
 
     // ports
-    input wire [7:0] misobyte_in,
-    input wire [7:0] mosibyte_in,
+    input wire [31:0] rcv_byte,
 
     // input port
     input wire [15:0] addr_i,
@@ -337,8 +333,7 @@ module lab8_io_core (
     reg strobe = 0;
 
     // input probe buffers
-    reg [7:0] misobyte_in_buf = 0;
-    reg [7:0] mosibyte_in_buf = 0;
+    reg [31:0] rcv_byte_buf = 0;
 
     // output probe buffers
     
@@ -352,8 +347,7 @@ module lab8_io_core (
     always @(posedge user_clk) begin
         if(strobe) begin
             // update input buffers from input probes
-            misobyte_in_buf <= misobyte_in;
-            mosibyte_in_buf <= mosibyte_in;
+            rcv_byte_buf <= rcv_byte;
 
             // update output buffers from output probes
             
@@ -375,8 +369,8 @@ module lab8_io_core (
                 case (addr_i)
                     BASE_ADDR + 0: data_o <= strobe;
 
-                    BASE_ADDR + 1: data_o <= misobyte_in_buf;
-                    BASE_ADDR + 2: data_o <= mosibyte_in_buf;
+                    BASE_ADDR + 1: data_o <= rcv_byte_buf[15:0];
+                    BASE_ADDR + 2: data_o <= rcv_byte_buf[31:16];
                 endcase
             end
 

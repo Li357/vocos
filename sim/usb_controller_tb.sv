@@ -8,7 +8,7 @@ module usb_controller_tb();
   logic n_rst_out;
   logic n_ss_out;
   logic mosi_out;
-  logic [7:0] byte_out;
+  logic [15:0] byte_out;
 
   usb_controller uut(
     .clk_in(clk_in),
@@ -18,7 +18,7 @@ module usb_controller_tb();
     .n_rst_out(n_rst_out),
     .n_ss_out(n_ss_out),
     .mosi_out(mosi_out),
-    .byte_out(byte_out)
+    .bytes_out(byte_out)
   );
 
   always begin
