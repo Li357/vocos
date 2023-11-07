@@ -45,6 +45,11 @@ module usb_controller(
     INIT_ENABLE_INTERRUPTS,
     INIT_SAMPLEBUS,
     INIT_WAIT,
+    INIT_BUSRESET,
+    INIT_WAIT_BUSRESET,INIT_WAIT_2,
+    INIT_START_SOF,
+    INIT_WAIT_FOR_SOF,
+    INIT_WAIT_AFTER_SOF,
 
     CLEAR_INTERRUPTS,
 
@@ -55,6 +60,7 @@ module usb_controller(
     SETUP_SET_PERADDR_CLEAR,
     SETUP_SET_PERADDR_STATUS,
     SETUP_SET_PERADDR_STATUS_CLEAR,
+    SETUP_SET_PERADDR_STATUS_WAIT,
     SETUP_SET_PERADDR_REG,
     SETUP_SET_PERADDR_FINISH,
     SETUP_READ_PERADDR,
@@ -99,18 +105,25 @@ module usb_controller(
   // IOPINS1 GPOUT0
   localparam logic [7:0] POWER_MSG             [63:0] = '{0: flip8({5'd20, WRITE}), 1: flip8(8'b00000001), default: '0};
   // MODE    DPPULLDN | DMPULLDN | SEPIRQ | HOST
-  localparam logic [7:0] HOSTMODE_MSG          [63:0] = '{0: flip8({5'd27, WRITE}), 1: flip8(8'b11001001), default: '0};
+  localparam logic [7:0] HOSTMODE_MSG          [63:0] = '{0: flip8({5'd27, WRITE}), 1: flip8(8'b11011001), default: '0};
   // HIEN    HXFRDNIE | SNDBAVIE | RCVDAVIE
-  localparam logic [7:0] ENABLE_INTERRUPTS_MSG [63:0] = '{0: flip8({5'd26, WRITE}), 1: flip8(8'b10001100), default: '0};
+  localparam logic [7:0] ENABLE_INTERRUPTS_MSG [63:0] = '{0: flip8({5'd26, WRITE}), 1: flip8(8'b01100000), default: '0};
   // HCTL    BUSSAMPLE
   localparam logic [7:0] SAMPLEBUS_MSG         [63:0] = '{0: flip8({5'd29, WRITE}), 1: flip8(8'b00000100), default: '0};
+  // HCTL    BUSRST
+  localparam logic [7:0] BUSRESET_MSG          [63:0] = '{0: flip8({5'd29, WRITE}), 1: flip8(8'b00000001), default: '0};
+  localparam logic [7:0] READ_HCTL_MSG         [63:0] = '{0: flip8({5'd29, READ}), default: '0};
+  
+  localparam logic [7:0] SOF_MSG               [63:0] = '{0: flip8({5'd27, WRITE}), 1: flip8(8'b11011001), default: '0};
+  localparam logic [7:0] READ_HIRQ_MSG         [63:0] = '{0: flip8({5'd25, READ}), default: '0};
+  
   
   // SET_ADDRESS SETUP packet
   localparam logic [7:0] SET_PERADDR_SUDFIFO [63:0] = '{
     0: flip8({5'd4, WRITE}),   // SUDFIFO
     1: 8'h00,                  // bmRequestType
     2: flip8(8'h05),           // bmRequest (SET_ADDRESS = 0x05)
-    3: flip8(8'h25), 4: 8'h00, // device address, 0x25
+    3: flip8(8'h01), 4: 8'h00, // device address, 0x01
     5: 8'h00, 6: 8'h00,        // bIndex
     7: 8'h00, 8: 8'h00,        // bLength
     default: '0
@@ -156,7 +169,7 @@ module usb_controller(
   logic [6:0] tx_byte_count;
   logic tx_finished;
 
-  logic [15:0] wait_count;
+  logic [20:0] wait_count;
 
   max3421_spi spi(
     .clk_in(clk_in),
@@ -191,6 +204,10 @@ module usb_controller(
       INIT_SET_HOSTMODE:              tx_snd_bytes = HOSTMODE_MSG;
       INIT_ENABLE_INTERRUPTS:         tx_snd_bytes = ENABLE_INTERRUPTS_MSG;
       INIT_SAMPLEBUS:                 tx_snd_bytes = SAMPLEBUS_MSG;
+      INIT_BUSRESET:                  tx_snd_bytes = BUSRESET_MSG;
+      INIT_WAIT_BUSRESET:             tx_snd_bytes = READ_HCTL_MSG;
+      INIT_START_SOF:                 tx_snd_bytes = SOF_MSG;
+      INIT_WAIT_FOR_SOF:              tx_snd_bytes = READ_HIRQ_MSG;
 
       CLEAR_INTERRUPTS:               tx_snd_bytes = CLEAR_INT;
 
@@ -204,6 +221,9 @@ module usb_controller(
 
       SETUP_SET_PERADDR_READ,
       SETUP_SET_CONFIG_READ:          tx_snd_bytes = SET_PERADDR_READ;
+
+      SETUP_SET_PERADDR_STATUS,
+      SETUP_SET_CONFIG_STATUS:        tx_snd_bytes = SET_PERADDR_STATUS;
 
       SETUP_SET_PERADDR_CLEAR,
       SETUP_SET_CONFIG_CLEAR,
@@ -226,8 +246,6 @@ module usb_controller(
     endcase
   end
 
-  logic [3:0] write_count;
-
   always_ff @(posedge clk_in) begin
     if (rst_in) begin
       state <= INIT;
@@ -239,7 +257,6 @@ module usb_controller(
           state <= INIT_SET_FULLDUPLEX;
           wait_count <= 0;
           txing <= 1;
-          write_count <= 0;
         end
 
         // Step 0.1: set full-duplex mode and POSINT
@@ -265,7 +282,6 @@ module usb_controller(
 
         INIT_STABILIZE: begin
           if (tx_finished) begin
-            bytes_out[15:8] <= tx_rcv_bytes[1];
             // Check OSCOKIRQ in USBIRQ to see if the oscillator is ready 
             if (tx_rcv_bytes[1][0] == 1) begin
               state <= INIT_SET_POWER;
@@ -307,11 +323,61 @@ module usb_controller(
         end
 
         INIT_WAIT: begin
-          // This was here because I thought my peripheral needed more time
-          // to setup. Didn't work.
-          if (wait_count == 50000) begin
+          // Wait for the USB bus to settle... let's do 200ms since that's what they did here:
+          // https://gist.github.com/blindman2k/f4da0312c3f09df91347#file-max3421e-device-nut-L513
+          // 1/(98.3 MHz / 16) * 1.2e6 ~ 200 ms
+          if (wait_count == 1_250_000) begin
             txing <= 1;
-            state <= SETUP_SET_PERADDR_REG;
+            state <= INIT_BUSRESET;
+            wait_count <= 0;
+          end else wait_count <= wait_count + 1;
+        end
+
+        INIT_BUSRESET: begin
+          if (tx_finished) begin
+            state <= INIT_WAIT_BUSRESET;
+          end
+        end
+
+        INIT_WAIT_BUSRESET: begin
+          if (tx_finished) begin
+            if (tx_rcv_bytes[1][0] == 0) begin
+              state <= INIT_WAIT_2;
+            end
+          end
+        end
+
+        INIT_WAIT_2: begin
+          // Wait for the USB bus to settle... let's do 200ms since that's what they did here:
+          // https://gist.github.com/blindman2k/f4da0312c3f09df91347#file-max3421e-device-nut-L513
+          // 1/(98.3 MHz / 16) * 1.2e6 ~ 200 ms
+          if (wait_count == 1_250_000) begin
+            txing <= 1;
+            state <= INIT_START_SOF;
+            wait_count <= 0;
+          end else wait_count <= wait_count + 1;
+        end
+
+        INIT_START_SOF: begin
+          if (tx_finished) begin
+            state <= INIT_WAIT_FOR_SOF;
+          end
+        end
+
+        INIT_WAIT_FOR_SOF: begin
+          if (tx_finished) begin
+            bytes_out[15:8] <= tx_rcv_bytes[0];
+            bytes_out[7:0] <= tx_rcv_bytes[1];
+            if (tx_rcv_bytes[1][6] == 1) begin
+              state <= INIT_WAIT_AFTER_SOF;
+            end
+          end
+        end
+
+        INIT_WAIT_AFTER_SOF: begin
+          if (wait_count == 120_000) begin
+            txing <= 1;
+            state <= SETUP_SET_PERADDR_SUDFIFO;
             wait_count <= 0;
           end else wait_count <= wait_count + 1;
         end
@@ -345,18 +411,13 @@ module usb_controller(
         
         // Step 1.1: set peripheral address. We need to clock in 8 bytes into SUDFIFO:
         // bmRequestType  SET_ADDRESS  Device Address  wIndex  wLength
-        // 0x00           0x05         0x2500          0x0000  0x0000
+        // 0x00           0x05         0x0100          0x0000  0x0000
         // Then clock in 0x10 to HXFR to send the SETUP packet
         // Then clock in 0x80 to HXFR to send the STATUS HS-IN packet
         // Then we'll check for HXFRDNIRQ on finish and clear
 
         // Set the PERADDR reg, which will hold our future peripheral address once
         // this pack is done. The MAX3421 will use this value for future transfers
-        SETUP_SET_PERADDR_REG: begin
-          if (tx_finished) begin
-            state <= SETUP_SET_PERADDR_SUDFIFO;
-          end
-        end
 
         SETUP_SET_PERADDR_SUDFIFO: begin
           if (tx_finished) begin
@@ -367,7 +428,7 @@ module usb_controller(
 
         SETUP_SET_PERADDR_SUDFIFO_WAIT: begin
           // Some wait time that didn't work
-          if (wait_count == 50000) begin
+          if (wait_count == 10) begin
             txing <= 1;
             state <= SETUP_SET_PERADDR_HXFR;
             wait_count <= 0;
@@ -391,19 +452,6 @@ module usb_controller(
           end else wait_count <= wait_count + 1;
         end
 
-        SETUP_SET_PERADDR_READ: begin
-          // I'm getting stuck here. HRSLT is always 0x0E (J-Status error) or 0x0D (Device
-          // did not respond in time). Check the programming guide.
-          if (tx_finished) begin
-            bytes_out[15:8] <= tx_rcv_bytes[0];
-            bytes_out[7:0] <= tx_rcv_bytes[1];
-            // If the transfer completed successfully
-            //if (tx_rcv_bytes[1][3:0] == 0) begin
-            //state <= SETUP_SET_PERADDR_CLEAR;
-            //end
-          end
-        end
-
         SETUP_SET_PERADDR_CLEAR: begin
           if (tx_finished) begin
             state <= SETUP_SET_PERADDR_STATUS;
@@ -412,7 +460,30 @@ module usb_controller(
 
         SETUP_SET_PERADDR_STATUS: begin
           if (tx_finished) begin
-            state <= SETUP_SET_PERADDR_STATUS_CLEAR;
+            state <= SETUP_SET_PERADDR_STATUS_WAIT;
+          end
+        end
+
+        SETUP_SET_PERADDR_STATUS_WAIT: begin
+          if (wait_count == 10) begin
+            txing <= 1;
+            state <= SETUP_SET_PERADDR_READ;
+            wait_count <= 0;
+          end else wait_count <= wait_count + 1;
+        end
+
+        SETUP_SET_PERADDR_READ: begin
+          if (tx_finished) begin
+            bytes_out[15:8] <= tx_rcv_bytes[0];
+
+            bytes_out[7:0] <= tx_rcv_bytes[1];
+            // If the transfer completed successfully
+            if (tx_rcv_bytes[1][3:0] == 0) begin
+              state <= SETUP_SET_PERADDR_STATUS_CLEAR;
+            // NAK
+            end else if (tx_rcv_bytes[1][3:0] == 4) begin
+              state <= SETUP_SET_PERADDR_STATUS;
+            end
           end
         end
 
@@ -423,11 +494,18 @@ module usb_controller(
         end
 
         SETUP_SET_PERADDR_FINISH: begin
-          if (wait_count == 100) begin
+          // ~30ms rest time
+          if (wait_count == 190_000) begin
             txing <= 1;
-            state <= SETUP_SET_PERADDR_READ;
+            state <= SETUP_SET_PERADDR_REG;
             wait_count <= 0;
           end wait_count <= wait_count + 1;
+        end
+
+        SETUP_SET_PERADDR_REG: begin
+          if (tx_finished) begin
+            state <= WAITING;//SETUP_SET_CONFIG_SUDFIFO;
+          end
         end
 
         // Step 1.2: set configuration descriptor. I'm just guessing its configuration 1 from
