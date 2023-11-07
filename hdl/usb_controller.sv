@@ -67,6 +67,8 @@ module usb_controller(
 
     SETUP_SET_PERADDR_SUDFIFO_WAIT,
 
+    SETUP_SET_CONFIG_SUDFIFO_WAIT,
+
     SETUP_SET_CONFIG_SUDFIFO,
     SETUP_SET_CONFIG_HXFR,
     SETUP_SET_CONFIG_WAIT,
@@ -74,6 +76,7 @@ module usb_controller(
     SETUP_SET_CONFIG_CLEAR,
     SETUP_SET_CONFIG_STATUS,
     SETUP_SET_CONFIG_STATUS_CLEAR,
+    SETUP_SET_CONFIG_STATUS_WAIT,
     SETUP_SET_CONFIG_FINISH,
 
     POLL_BULK_IN_HXFR,
@@ -427,7 +430,6 @@ module usb_controller(
         end
 
         SETUP_SET_PERADDR_SUDFIFO_WAIT: begin
-          // Some wait time that didn't work
           if (wait_count == 10) begin
             txing <= 1;
             state <= SETUP_SET_PERADDR_HXFR;
@@ -474,9 +476,9 @@ module usb_controller(
 
         SETUP_SET_PERADDR_READ: begin
           if (tx_finished) begin
-            bytes_out[15:8] <= tx_rcv_bytes[0];
+            //bytes_out[15:8] <= tx_rcv_bytes[0];
 
-            bytes_out[7:0] <= tx_rcv_bytes[1];
+            //bytes_out[7:0] <= tx_rcv_bytes[1];
             // If the transfer completed successfully
             if (tx_rcv_bytes[1][3:0] == 0) begin
               state <= SETUP_SET_PERADDR_STATUS_CLEAR;
@@ -504,7 +506,7 @@ module usb_controller(
 
         SETUP_SET_PERADDR_REG: begin
           if (tx_finished) begin
-            state <= WAITING;//SETUP_SET_CONFIG_SUDFIFO;
+            state <= SETUP_SET_CONFIG_SUDFIFO;
           end
         end
 
@@ -517,8 +519,17 @@ module usb_controller(
         // Then check for HXFRDNIRQ and clear
         SETUP_SET_CONFIG_SUDFIFO: begin
           if (tx_finished) begin
-            state <= SETUP_SET_CONFIG_HXFR;
+            state <= SETUP_SET_CONFIG_SUDFIFO_WAIT;
+            txing <= 0;
           end
+        end
+
+        SETUP_SET_CONFIG_SUDFIFO_WAIT: begin
+          if (wait_count == 10) begin
+            txing <= 1;
+            state <= SETUP_SET_CONFIG_HXFR;
+            wait_count <= 0;
+          end else wait_count <= wait_count + 1;
         end
 
         SETUP_SET_CONFIG_HXFR: begin
@@ -531,17 +542,9 @@ module usb_controller(
         SETUP_SET_CONFIG_WAIT: begin
           if (wait_count == 20) begin
             txing <= 1;
-            state <= SETUP_SET_CONFIG_READ;
+            state <= SETUP_SET_CONFIG_CLEAR;
             wait_count <= 0;
           end else wait_count <= wait_count + 1;
-        end
-
-        SETUP_SET_CONFIG_READ: begin
-          if (tx_finished) begin
-            bytes_out[15:8] <= tx_rcv_bytes[0];
-            bytes_out[7:0] <= tx_rcv_bytes[1];
-            state <= SETUP_SET_CONFIG_CLEAR;
-          end
         end
 
         SETUP_SET_CONFIG_CLEAR: begin
@@ -552,7 +555,28 @@ module usb_controller(
 
         SETUP_SET_CONFIG_STATUS: begin
           if (tx_finished) begin
-            state <= SETUP_SET_CONFIG_STATUS_CLEAR;
+            state <= SETUP_SET_CONFIG_STATUS_WAIT;
+          end
+        end
+
+        SETUP_SET_CONFIG_STATUS_WAIT: begin
+          if (wait_count == 10) begin
+            txing <= 1;
+            state <= SETUP_SET_CONFIG_READ;
+            wait_count <= 0;
+          end else wait_count <= wait_count + 1;
+        end
+
+        SETUP_SET_CONFIG_READ: begin
+          if (tx_finished) begin
+            //bytes_out[15:8] <= tx_rcv_bytes[0];
+            //bytes_out[7:0] <= tx_rcv_bytes[1];
+            if (tx_rcv_bytes[1][3:0] == 0) begin
+              state <= SETUP_SET_CONFIG_STATUS_CLEAR;
+            // NAK
+            end else if (tx_rcv_bytes[1][3:0] == 4) begin
+              state <= SETUP_SET_CONFIG_STATUS;
+            end
           end
         end
 
@@ -564,9 +588,9 @@ module usb_controller(
         end
 
         SETUP_SET_CONFIG_FINISH: begin
-          if (wait_count == 100) begin
+          if (wait_count == 190_000) begin
             txing <= 1;
-            state <= POLL_BULK_IN_HXFR;
+            state <= WAITING;
             wait_count <= 0;
           end wait_count <= wait_count + 1;
         end
