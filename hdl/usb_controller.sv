@@ -24,10 +24,12 @@ module usb_controller(
   output logic mosi_out,
   output logic clk_out,
   output logic [15:0] bytes_out, // this is just for LEDs so I can kinda debug what's happening
-  output logic txd_out
+  output logic txd_out,
+  output logic [31:0] midi_out
 );
 
   // Based off of https://github.com/calvinlclee3/fpga_soc/blob/master/software/text_mode_vga/usb_kb/MAX3421E.c
+  // https://github.com/jakakordez/max3421e-stm32/blob/master/Src/MAX3421E.c
   // DATASHEET: https://www.analog.com/media/en/technical-documentation/data-sheets/MAX3421E.pdf
   // PROGRAMMING GUIDE: https://www.analog.com/media/en/technical-documentation/user-guides/max3421e-programming-guide.pdf
   // YOU WILL NEED TO READ THESE
@@ -65,10 +67,13 @@ module usb_controller(
     SETUP_SET_PERADDR_FINISH,
     SETUP_READ_PERADDR,
 
+        SETUP_SET_PERADDR_REG0,    SETUP_READ_PERADDR0,
+
     SETUP_SET_PERADDR_SUDFIFO_WAIT,
+    SETUP_SET_PERADDR_SUDFIFO_READ,
 
     SETUP_SET_CONFIG_SUDFIFO_WAIT,
-
+    SETUP_SET_CONFIG_SUDFIFO_READ,
     SETUP_SET_CONFIG_SUDFIFO,
     SETUP_SET_CONFIG_HXFR,
     SETUP_SET_CONFIG_WAIT,
@@ -79,9 +84,23 @@ module usb_controller(
     SETUP_SET_CONFIG_STATUS_WAIT,
     SETUP_SET_CONFIG_FINISH,
 
+    SETUP_GET_DESC_IN,
+    SETUP_GET_DESC_IN_WAIT,SETUP_GET_DESC_WRITE,
+
+SETUP_GET_DESC_SUDFIFO,
+SETUP_GET_DESC_HXFR,
+SETUP_GET_DESC_SUDFIFO_WAIT,
+SETUP_GET_DESC_WAIT,
+
+    POLL_READ_TOGGLES,
+    POLL_WRITE_TOGGLE0,
+    POLL_WRITE_TOGGLE1,
     POLL_BULK_IN_HXFR,
     POLL_BULK_IN_WAIT,
-    POLL_BULK_IN_READ,
+    POLL_BULK_IN_READ_BC,
+    POLL_BULK_IN_READ_DATA,
+    POLL_BULK_IN_WAIT2,
+    
 
     READ_HOSTMODE,
 
@@ -92,6 +111,8 @@ module usb_controller(
     ERROR
   } state_t;
   state_t state;
+  state_t next_state;
+  state_t prev_state;
 
   // 0 | DIR | ACKSTAT (not used)
   localparam READ  = 3'b000;
@@ -120,28 +141,50 @@ module usb_controller(
   localparam logic [7:0] SOF_MSG               [63:0] = '{0: flip8({5'd27, WRITE}), 1: flip8(8'b11011001), default: '0};
   localparam logic [7:0] READ_HIRQ_MSG         [63:0] = '{0: flip8({5'd25, READ}), default: '0};
   
+  localparam logic [7:0] READ_TOGGLES_MSG           [63:0] = '{0: flip8({5'd31, READ}), default: '0};
+  localparam logic [7:0] WRITE_TOGGLE_G1_MSG          [63:0] = '{0: flip8({5'd29, WRITE}), 1: flip8(8'b00100000), default: '0};
+  localparam logic [7:0] WRITE_TOGGLE_G0_MSG          [63:0] = '{0: flip8({5'd29, WRITE}), 1: flip8(8'b00010000), default: '0};
   
   // SET_ADDRESS SETUP packet
   localparam logic [7:0] SET_PERADDR_SUDFIFO [63:0] = '{
     0: flip8({5'd4, WRITE}),   // SUDFIFO
     1: 8'h00,                  // bmRequestType
     2: flip8(8'h05),           // bmRequest (SET_ADDRESS = 0x05)
-    3: flip8(8'h01), 4: 8'h00, // device address, 0x01
+    3: flip8(8'd1), 4: 8'h00, // device address, 24 since its a palindrome
     5: 8'h00, 6: 8'h00,        // bIndex
     7: 8'h00, 8: 8'h00,        // bLength
     default: '0
   };
   // HXFR value to send SETUP packet after loading SUDFIFO
   localparam logic [7:0] SET_PERADDR_HXFR    [63:0] = '{0: flip8({5'd30, WRITE}), 1: flip8(8'b00010000), default: '0};
+  localparam logic [7:0] SET_CONFIG_HXFR     [63:0] = '{0: flip8({5'd30, WRITE}), 1: flip8(8'b10100000), default: '0};
+  localparam logic [7:0] GET_DESC_TOG     [63:0] = '{0: flip8({5'd29, WRITE}), 1: flip8(8'b00100000), default: '0};
+  localparam logic [7:0] GET_DESC_HXFR     [63:0] = '{0: flip8({5'd30, WRITE}), 1: flip8(8'b00000000), default: '0};
+  localparam logic [7:0] GET_DESC_TOGGLES     [63:0] = '{0: flip8({5'd25, WRITE}), 1: flip8(8'b10000000), default: '0};
+  localparam logic [7:0] SET_PERADDR_0    [63:0] = '{0: flip8({5'd28, WRITE}), 1: flip8(8'd0), default: '0};
+
+
   // Read the HRSLT (host result) bits to see if the transfer was successful
   localparam logic [7:0] SET_PERADDR_READ    [63:0] = '{0: flip8({5'd31, READ}), default: '0};
   // Clear HXFRDNIRQ (host transfer done interrupt), FRAMEIRQ (SOF interrupt), CONNEIRQ (connection)
-  localparam logic [7:0] SET_PERADDR_CLEAR   [63:0] = '{0: flip8({5'd25, WRITE}), 1: flip8(8'b11100000), default: '0};
+  localparam logic [7:0] SET_PERADDR_CLEAR   [63:0] = '{0: flip8({5'd25, WRITE}), 1: flip8(8'b10000000), default: '0};
   // HXFR value to send STATUS packet to finish control transfer
   localparam logic [7:0] SET_PERADDR_STATUS  [63:0] = '{0: flip8({5'd30, WRITE}), 1: flip8(8'b10000000), default: '0};
   // PERADDR register
   localparam logic [7:0] SET_PERADDR_REG     [63:0] = '{0: flip8({5'd28, WRITE}), 1: flip8(8'd1), default: '0};
   localparam logic [7:0] READ_PERADDR        [63:0] = '{0: flip8({5'd28, READ}), default:'0};
+  localparam logic [7:0] READ_SUDFIFO        [63:0] = '{0: flip8({5'd4, READ}), default:'0};
+
+  // GET_DESCRIPTOR SETUP packet
+  localparam logic [7:0] GET_DESC_SUDFIFO [63:0] = '{
+    0: flip8({5'd4, WRITE}),
+    1: flip8(8'h80),
+    2: flip8(8'h06),
+    3: 8'h00, 4: flip8(8'h01),
+    5: 8'h00, 6: 8'h00,
+    7: flip8(8'h08), 8: 8'h00,
+    default: '0
+  };
 
   // SET_CONFIGURATION SETUP packet
   localparam logic [7:0] SET_CONFIG_SUDFIFO [63:0] = '{
@@ -154,12 +197,12 @@ module usb_controller(
     default: '0
   };
 
-  localparam logic [7:0] BULK_IN_HXFR [63:0] = '{0: flip8({5'd30, WRITE}), 1: flip8(8'b00000000), default: '0};
-  localparam logic [7:0] BULK_IN_READ [63:0] = '{0: flip8({5'd31, READ}), default: '0};
+  localparam logic [7:0] BULK_IN_HXFR [63:0] = '{0: flip8({5'd30, WRITE}), 1: flip8(8'b00000011), default: '0};
+  localparam logic [7:0] BULK_IN_READ [63:0] = '{0: flip8({5'd6, READ}), default: '0};
 
   localparam logic [7:0] CLEAR_INT [63:0]    = '{0: flip8({5'd25, WRITE}), 1: 8'b11111111, default: '0};
   // Read byte count of received data
-  localparam logic [7:0] READBC [63:0]       = '{0: flip8({5'd6, READ}), default: '0};
+  localparam logic [7:0] READBC [63:0]       = '{0: flip8({5'd31, READ}), default: '0};
 
   logic txing;
   logic [7:0] tx_snd_bytes [63:0];
@@ -194,6 +237,8 @@ module usb_controller(
   assign mosi_out = txing ? tx_mosi : 0;
   assign n_ss_out = txing ? tx_n_ss : 1;
 
+  logic [7:0] rcv_byte_count;
+
   always_comb begin
     // Most messages are 2 bytes long, i.e. write the register then its new value
     // or read a register and get the USB status bits + register value
@@ -214,14 +259,20 @@ module usb_controller(
 
       CLEAR_INTERRUPTS:               tx_snd_bytes = CLEAR_INT;
 
+      SETUP_GET_DESC_SUDFIFO:         tx_snd_bytes = GET_DESC_SUDFIFO;
+      SETUP_GET_DESC_IN:              tx_snd_bytes = GET_DESC_HXFR;
+      SETUP_GET_DESC_WRITE:           tx_snd_bytes = GET_DESC_TOGGLES;
+
+SETUP_SET_PERADDR_REG0:               tx_snd_bytes = SET_PERADDR_0;
+
       SETUP_SET_PERADDR_REG:          tx_snd_bytes = SET_PERADDR_REG;
       SETUP_SET_PERADDR_SUDFIFO: begin
         tx_snd_bytes = SET_PERADDR_SUDFIFO;
         tx_snd_byte_count = 9;
       end
-      SETUP_SET_PERADDR_HXFR,
-      SETUP_SET_CONFIG_HXFR:          tx_snd_bytes = SET_PERADDR_HXFR;
-
+      SETUP_GET_DESC_HXFR,
+      SETUP_SET_PERADDR_HXFR:         tx_snd_bytes = SET_PERADDR_HXFR;
+      SETUP_SET_CONFIG_HXFR:          tx_snd_bytes = SET_CONFIG_HXFR;
       SETUP_SET_PERADDR_READ,
       SETUP_SET_CONFIG_READ:          tx_snd_bytes = SET_PERADDR_READ;
 
@@ -237,9 +288,23 @@ module usb_controller(
         tx_snd_bytes = SET_CONFIG_SUDFIFO;
         tx_snd_byte_count = 9;
       end
+      SETUP_SET_PERADDR_SUDFIFO_READ,
+      SETUP_SET_CONFIG_SUDFIFO_READ: begin
+        tx_snd_bytes = READ_SUDFIFO;
+        tx_snd_byte_count = 9;
+      end
+
+      POLL_READ_TOGGLES:              tx_snd_bytes = READ_TOGGLES_MSG;
+      POLL_WRITE_TOGGLE1:             tx_snd_bytes = WRITE_TOGGLE_G1_MSG;
+      POLL_WRITE_TOGGLE0:             tx_snd_bytes = WRITE_TOGGLE_G0_MSG;
 
       POLL_BULK_IN_HXFR:              tx_snd_bytes = BULK_IN_HXFR;
-      POLL_BULK_IN_READ:              tx_snd_bytes = READBC;
+      POLL_BULK_IN_READ_BC:           tx_snd_bytes = READBC;
+      POLL_BULK_IN_READ_DATA: begin
+        tx_snd_bytes = BULK_IN_READ;
+        tx_snd_byte_count = rcv_byte_count + 1;
+      end
+      SETUP_READ_PERADDR0,
       SETUP_READ_PERADDR:             tx_snd_bytes = READ_PERADDR;
   
       default: begin
@@ -260,6 +325,9 @@ module usb_controller(
           state <= INIT_SET_FULLDUPLEX;
           wait_count <= 0;
           txing <= 1;
+          rcv_byte_count <= 0;
+          midi_out <= 0;
+          next_state <= INIT;
         end
 
         // Step 0.1: set full-duplex mode and POSINT
@@ -332,6 +400,7 @@ module usb_controller(
           if (wait_count == 1_250_000) begin
             txing <= 1;
             state <= INIT_BUSRESET;
+            next_state <= INIT_START_SOF;
             wait_count <= 0;
           end else wait_count <= wait_count + 1;
         end
@@ -356,7 +425,7 @@ module usb_controller(
           // 1/(98.3 MHz / 16) * 1.2e6 ~ 200 ms
           if (wait_count == 1_250_000) begin
             txing <= 1;
-            state <= INIT_START_SOF;
+            state <= next_state;//INIT_START_SOF;
             wait_count <= 0;
           end else wait_count <= wait_count + 1;
         end
@@ -369,8 +438,8 @@ module usb_controller(
 
         INIT_WAIT_FOR_SOF: begin
           if (tx_finished) begin
-            bytes_out[15:8] <= tx_rcv_bytes[0];
-            bytes_out[7:0] <= tx_rcv_bytes[1];
+            //bytes_out[15:8] <= tx_rcv_bytes[0];
+            //bytes_out[7:0] <= tx_rcv_bytes[1];
             if (tx_rcv_bytes[1][6] == 1) begin
               state <= INIT_WAIT_AFTER_SOF;
             end
@@ -378,7 +447,7 @@ module usb_controller(
         end
 
         INIT_WAIT_AFTER_SOF: begin
-          if (wait_count == 120_000) begin
+          if (wait_count == 100_000) begin
             txing <= 1;
             state <= SETUP_SET_PERADDR_SUDFIFO;
             wait_count <= 0;
@@ -411,7 +480,76 @@ module usb_controller(
         // model) but I'm going to keep that as part of the stretch goal.
 
         // Let's start setting up USB!
+
+        SETUP_SET_PERADDR_REG0: begin
+          if (tx_finished) begin
+            state <= SETUP_READ_PERADDR0;
+          end
+        end
+
+        SETUP_READ_PERADDR0: begin
+          if (tx_finished) begin
+            if (tx_rcv_bytes[1] == 0) begin
+              state <= SETUP_GET_DESC_SUDFIFO;
+            end else state <= SETUP_SET_PERADDR_REG0;
+          end
+        end
         
+        SETUP_GET_DESC_SUDFIFO: begin
+          if (tx_finished) begin
+            state <= SETUP_GET_DESC_SUDFIFO_WAIT;
+            txing <= 0;
+          end
+        end
+
+        SETUP_GET_DESC_SUDFIFO_WAIT: begin
+          if (wait_count == 100_000) begin
+            txing <= 1;
+            state <= SETUP_GET_DESC_HXFR;
+            wait_count <= 0;
+          end else wait_count <= wait_count + 1;
+        end
+
+        SETUP_GET_DESC_HXFR: begin
+          if (tx_finished) begin
+            state <= SETUP_GET_DESC_WAIT;
+            txing <= 0;
+          end
+        end
+
+        SETUP_GET_DESC_WAIT: begin
+          if (wait_count == 100_000) begin
+            txing <= 1;
+            state <= SETUP_SET_PERADDR_READ;
+            next_state <= SETUP_GET_DESC_WRITE;
+            prev_state <= SETUP_GET_DESC_HXFR;
+            wait_count <= 0;
+          end else wait_count <= wait_count + 1;
+        end
+
+        SETUP_GET_DESC_WRITE: begin
+          if (tx_finished) begin
+            state <= SETUP_GET_DESC_IN;
+          end
+        end
+
+        SETUP_GET_DESC_IN: begin
+          if (tx_finished) begin
+            state <= SETUP_GET_DESC_IN_WAIT;
+            txing <= 0;
+          end
+        end
+
+        SETUP_GET_DESC_IN_WAIT: begin
+          if (wait_count == 20) begin
+            txing <= 1;
+            state <= SETUP_SET_PERADDR_READ;
+            next_state <= SETUP_GET_DESC_WRITE;
+            prev_state <= SETUP_GET_DESC_IN;
+            wait_count <= 0;
+          end else wait_count <= wait_count + 1;
+        end
+
         // Step 1.1: set peripheral address. We need to clock in 8 bytes into SUDFIFO:
         // bmRequestType  SET_ADDRESS  Device Address  wIndex  wLength
         // 0x00           0x05         0x0100          0x0000  0x0000
@@ -430,7 +568,7 @@ module usb_controller(
         end
 
         SETUP_SET_PERADDR_SUDFIFO_WAIT: begin
-          if (wait_count == 10) begin
+          if (wait_count == 100_000) begin
             txing <= 1;
             state <= SETUP_SET_PERADDR_HXFR;
             wait_count <= 0;
@@ -449,7 +587,9 @@ module usb_controller(
           // to the SETUP and updates the HXFRDNIRQ, HRSLT
           if (wait_count == 20) begin
             txing <= 1;
-            state <= SETUP_SET_PERADDR_CLEAR;
+            state <= SETUP_SET_PERADDR_READ;
+            next_state <= SETUP_SET_PERADDR_CLEAR;
+            prev_state <= SETUP_SET_PERADDR_HXFR;
             wait_count <= 0;
           end else wait_count <= wait_count + 1;
         end
@@ -470,21 +610,24 @@ module usb_controller(
           if (wait_count == 10) begin
             txing <= 1;
             state <= SETUP_SET_PERADDR_READ;
+            next_state <= SETUP_SET_PERADDR_STATUS_CLEAR;
+            prev_state <= SETUP_SET_PERADDR_STATUS;
             wait_count <= 0;
           end else wait_count <= wait_count + 1;
         end
 
         SETUP_SET_PERADDR_READ: begin
           if (tx_finished) begin
-            //bytes_out[15:8] <= tx_rcv_bytes[0];
-
-            //bytes_out[7:0] <= tx_rcv_bytes[1];
+            midi_out[31:28] <= 8'hF;
+            midi_out[3:0] <= tx_rcv_bytes[1][3:0];
+            bytes_out[15:8] <= tx_rcv_bytes[0];
+            bytes_out[7:0] <= tx_rcv_bytes[1];
             // If the transfer completed successfully
             if (tx_rcv_bytes[1][3:0] == 0) begin
-              state <= SETUP_SET_PERADDR_STATUS_CLEAR;
+              state <= next_state;
             // NAK
-            end else if (tx_rcv_bytes[1][3:0] == 4) begin
-              state <= SETUP_SET_PERADDR_STATUS;
+            end else /*if (tx_rcv_bytes[1][3:0] == 4)*/ begin
+              state <= prev_state;
             end
           end
         end
@@ -492,12 +635,13 @@ module usb_controller(
         SETUP_SET_PERADDR_STATUS_CLEAR: begin
           if (tx_finished) begin
             state <= SETUP_SET_PERADDR_FINISH;
+            txing <= 0;
           end
         end
 
         SETUP_SET_PERADDR_FINISH: begin
-          // ~30ms rest time
-          if (wait_count == 190_000) begin
+          // ~300ms rest time
+          if (wait_count == 2_000_000) begin
             txing <= 1;
             state <= SETUP_SET_PERADDR_REG;
             wait_count <= 0;
@@ -506,7 +650,16 @@ module usb_controller(
 
         SETUP_SET_PERADDR_REG: begin
           if (tx_finished) begin
-            state <= SETUP_SET_CONFIG_SUDFIFO;
+            state <= SETUP_READ_PERADDR;
+          end
+        end
+
+        SETUP_READ_PERADDR: begin
+          if (tx_finished) begin
+            if (tx_rcv_bytes[1] == 1) begin
+              state <= INIT_BUSRESET;
+              next_state <= SETUP_SET_CONFIG_SUDFIFO;
+            end else state <= SETUP_SET_PERADDR_REG;
           end
         end
 
@@ -525,11 +678,19 @@ module usb_controller(
         end
 
         SETUP_SET_CONFIG_SUDFIFO_WAIT: begin
-          if (wait_count == 10) begin
+          if (wait_count == 100_000) begin
             txing <= 1;
-            state <= SETUP_SET_CONFIG_HXFR;
+            state <= SETUP_SET_CONFIG_SUDFIFO_READ;
             wait_count <= 0;
           end else wait_count <= wait_count + 1;
+        end
+
+        SETUP_SET_CONFIG_SUDFIFO_READ: begin
+          if (tx_finished) begin
+            if (tx_rcv_bytes[2] == 5) begin
+              state <= SETUP_SET_CONFIG_HXFR;
+            end else state <= SETUP_SET_CONFIG_SUDFIFO;
+          end
         end
 
         SETUP_SET_CONFIG_HXFR: begin
@@ -542,7 +703,9 @@ module usb_controller(
         SETUP_SET_CONFIG_WAIT: begin
           if (wait_count == 20) begin
             txing <= 1;
-            state <= SETUP_SET_CONFIG_CLEAR;
+            state <= SETUP_SET_CONFIG_READ;
+            next_state <= SETUP_SET_CONFIG_CLEAR;
+            prev_state <= SETUP_SET_CONFIG_HXFR;
             wait_count <= 0;
           end else wait_count <= wait_count + 1;
         end
@@ -560,22 +723,27 @@ module usb_controller(
         end
 
         SETUP_SET_CONFIG_STATUS_WAIT: begin
-          if (wait_count == 10) begin
+          if (wait_count == 100_000) begin
             txing <= 1;
             state <= SETUP_SET_CONFIG_READ;
+            next_state <= SETUP_SET_CONFIG_STATUS_CLEAR;
+            prev_state <= SETUP_SET_CONFIG_STATUS;
             wait_count <= 0;
           end else wait_count <= wait_count + 1;
         end
 
         SETUP_SET_CONFIG_READ: begin
           if (tx_finished) begin
-            //bytes_out[15:8] <= tx_rcv_bytes[0];
-            //bytes_out[7:0] <= tx_rcv_bytes[1];
+            midi_out[31:28] <= 4'hC;
+            midi_out[3:0] <= tx_rcv_bytes[1][3:0];
+            bytes_out[15:8] <= tx_rcv_bytes[0];
+            bytes_out[7:0] <= tx_rcv_bytes[1];
+
             if (tx_rcv_bytes[1][3:0] == 0) begin
-              state <= SETUP_SET_CONFIG_STATUS_CLEAR;
+              state <= next_state;
             // NAK
-            end else if (tx_rcv_bytes[1][3:0] == 4) begin
-              state <= SETUP_SET_CONFIG_STATUS;
+            end else /*if (tx_rcv_bytes[1][3:0] == 4)*/ begin
+              state <= prev_state;
             end
           end
         end
@@ -590,9 +758,21 @@ module usb_controller(
         SETUP_SET_CONFIG_FINISH: begin
           if (wait_count == 190_000) begin
             txing <= 1;
-            state <= WAITING;
+            state <= POLL_READ_TOGGLES;
             wait_count <= 0;
           end wait_count <= wait_count + 1;
+        end
+
+        POLL_READ_TOGGLES: begin
+          if (tx_finished) begin
+            state <= ~tx_rcv_bytes[1][5] ? POLL_WRITE_TOGGLE1 : POLL_WRITE_TOGGLE0;
+          end
+        end
+
+        POLL_WRITE_TOGGLE1,POLL_WRITE_TOGGLE0: begin
+          if (tx_finished) begin
+            state <= SETUP_SET_CONFIG_HXFR;
+          end
         end
 
         // Step 2.1: send BULK IN packet to ask for data every so often
@@ -602,29 +782,47 @@ module usb_controller(
         // Clear RCVDAVIRQ
         POLL_BULK_IN_HXFR: begin
           if (tx_finished) begin
-            //bytes_out[15:8] <= tx_rcv_bytes[0];
-            //bytes_out[7:0] <= tx_rcv_bytes[1];
             state <= POLL_BULK_IN_WAIT;
             txing <= 0;
           end
         end
 
         POLL_BULK_IN_WAIT: begin
-          // The peripheral is supposed to respond in 6.5 bit times :/
-          if (wait_count == 1000) begin
+          if (wait_count == 10) begin
             txing <= 1;
-            state <= POLL_BULK_IN_READ;
+            state <= POLL_BULK_IN_READ_BC;
             wait_count <= 0;
           end else wait_count <= wait_count + 1;
         end
 
-        POLL_BULK_IN_READ: begin
+        POLL_BULK_IN_READ_BC: begin
           if (tx_finished) begin
+            midi_out[31:28] <= 4'hB;
+            midi_out[7:0] <= tx_rcv_bytes[1];
             bytes_out[7:0] <= tx_rcv_bytes[1];
             bytes_out[15:8] <= tx_rcv_bytes[0];
-            state <= POLL_BULK_IN_WAIT;
+            rcv_byte_count <= tx_rcv_bytes[1];
+            state <= POLL_BULK_IN_WAIT2;
             txing <= 0;
           end
+        end
+
+        POLL_BULK_IN_READ_DATA: begin
+          if (tx_finished) begin
+            midi_out[24 +: 8] <= tx_rcv_bytes[4];
+            midi_out[16 +: 8] <= tx_rcv_bytes[5];
+            midi_out[8 +: 8] <= tx_rcv_bytes[6];
+            midi_out[0 +: 8] <= tx_rcv_bytes[7];
+            state <= POLL_BULK_IN_WAIT2;
+          end
+        end
+
+        POLL_BULK_IN_WAIT2: begin
+          if (wait_count == 100_000) begin
+            txing <= 1;
+            state <= POLL_BULK_IN_HXFR;
+            wait_count <= 0;
+          end else wait_count <= wait_count + 1;
         end
 
         // Step 2.2: de-encapsulate MIDI data!!!
@@ -635,9 +833,9 @@ module usb_controller(
 
         WAITING: ;
 
-        ERROR: begin
-          bytes_out <= 16'b1010101010101010;
-        end
+        // ERROR: begin
+        //   bytes_out <= 16'b1010101010101010;
+        // end
       endcase
     end
   end

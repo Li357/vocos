@@ -13,11 +13,20 @@ module top_level(
   output logic        usb_clk,
   output logic [15:0] led,
   output logic [7:0]  pmoda,
-  output logic        uart_txd
+  output logic        uart_txd,
+  output logic [3:0]  ss0_an,//anode control for upper four digits of seven-seg display
+  output logic [3:0]  ss1_an,//anode control for lower four digits of seven-seg display
+  output logic [6:0]  ss0_c, //cathode controls for the segments of upper four digits
+  output logic [6:0]  ss1_c, //cathod controls for the segments of lower four digits
+  output logic [2:0]  rgb0, //rgb led
+  output logic [2:0]  rgb1 //rgb led
 );
 
   logic sys_rst;
   assign sys_rst = btn[0];
+
+  assign rgb1 = 0;
+  assign rgb0 = 0;
 
   // the onboard MAX3421E USB chip can be clocked up to 26MHz
   // this is around 3MHz
@@ -38,21 +47,36 @@ module top_level(
   assign pmoda[4] = usb_int;
 
   logic [15:0] out;
+  logic [31:0] midi_out;
 
-  usb_controller usbc(
-    .clk_in(clk_25mhz),
+  // usb_controller usbc(
+  //   .clk_in(clk_25mhz),
+  //   .rst_in(sys_rst),
+  //   .int_in(usb_int),
+  //   .miso_in(usb_miso),
+  //   .n_rst_out(usb_n_rst),
+  //   .n_ss_out(usb_n_ss),
+  //   .mosi_out(usb_mosi),
+  //   .clk_out(usb_clk),
+  //   .bytes_out(out),
+
+  //   .rxd_in(uart_rxd),
+  //   .txd_out(uart_txd),
+
+  //   .midi_out(midi_out)
+  // );
+
+  logic [6:0] ss_c;
+
+  seven_segment_controller mssc(
+    .clk_in(clk_100mhz),
     .rst_in(sys_rst),
-    .int_in(usb_int),
-    .miso_in(usb_miso),
-    .n_rst_out(usb_n_rst),
-    .n_ss_out(usb_n_ss),
-    .mosi_out(usb_mosi),
-    .clk_out(usb_clk),
-    .bytes_out(out),
-
-    .rxd_in(uart_rxd),
-    .txd_out(uart_txd)
+    .val_in(midi_out),
+    .cat_out(ss_c),
+    .an_out({ss0_an, ss1_an})
   );
+  assign ss0_c = ss_c;
+  assign ss1_c = ss_c;
 
   assign led[15:0] = out;
 endmodule
