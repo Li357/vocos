@@ -48,7 +48,7 @@ module xilinx_true_dual_port_read_first_2_clock_ram #(
   generate
     if (INIT_FILE != "") begin: use_init_file
       initial
-        $readmemh(INIT_FILE, BRAM, 0, RAM_DEPTH-1);
+        $readmemb(INIT_FILE, BRAM, 0, RAM_DEPTH-1);
     end else begin: init_bram_to_zero
       integer ram_index;
       initial
