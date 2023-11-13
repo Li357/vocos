@@ -37,6 +37,11 @@ module sine
   assign addr_curr = phase_acc_curr[SYNTH_PHASE_ACC_BITS-2 -: $clog2(SAMPLES)];
   assign addr_next = phase_acc_next[SYNTH_PHASE_ACC_BITS-2 -: $clog2(SAMPLES)];
 
+  logic [$clog2(SAMPLES)-1:0] a0;
+  logic [$clog2(SAMPLES)-1:0] a1;
+  assign a0 = phase_acc_curr[SYNTH_PHASE_ACC_BITS-2] ? ~addr_curr : addr_curr;
+  assign a1 = phase_acc_next[SYNTH_PHASE_ACC_BITS-2] ? ~addr_next : addr_next;
+
   // we'll use the MSB for symmetry and LSBs for interpolation
   logic [4:0] phase_msb_lsbs_curr;
   pipeline #(
@@ -85,7 +90,8 @@ module sine
   assign sine_val_next = phase_msb_lsbs_next[4] ? {1'b0, -sine_lut_next} : {1'b1, sine_lut_next};
 
   always_ff @(posedge clk_in) begin
-    val_out <= (5'b10000 - phase_msb_lsbs_curr[4:0]) * sine_val_curr + phase_msb_lsbs_curr[4:0] * sine_val_next;
+    if (rst_in) val_out <= 0;
+    else val_out <= sine_val_curr; // no interpolation for now: (5'b10000 - phase_msb_lsbs_curr[3:0]) * sine_val_curr + phase_msb_lsbs_curr[3:0] * sine_val_next;
   end
 
 endmodule

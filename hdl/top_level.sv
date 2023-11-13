@@ -98,7 +98,7 @@ module top_level(
 
   logic [SYNTH_PHASE_ACC_BITS-1:0] phase_acc;
   switch_keyboard keyboard(
-    .sw_in(sw),
+    .sw_in(sw[15:3]),
     .phase_acc_out(phase_acc)
   );
 
@@ -107,6 +107,7 @@ module top_level(
     .clk_in(clk_synth),
     .rst_in(sys_rst),
     .phase_incr_in(phase_acc),
+    .wave_type_in(sw[2:0]),
     .synth_out(synth_out)
   );
 
