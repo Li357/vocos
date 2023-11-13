@@ -27,8 +27,13 @@ module top_level(
 
   import constants::*;
 
-  logic clk_98_3mhz;
-  audio_clk_wiz wiz (.clk_in(clk_100mhz), .clk_out(clk_98_3mhz));
+  logic clk_98_3mhz; // 98.333MHz
+  logic clk_i2s;     // 36.875MHz
+  clk_wiz wiz (
+    .clk_in1(clk_100mhz),
+    .clk_audio(clk_98_3mhz),
+    .clk_i2s(clk_i2s)
+  );
 
   logic sys_rst;
   assign sys_rst = btn[0];
