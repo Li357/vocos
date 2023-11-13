@@ -17,6 +17,7 @@ if {[llength $files] != 0} {
 
 
 # read in all system veriilog files:
+read_verilog -sv ./hdl/constants.sv
 read_verilog -sv [ glob ./hdl/*.sv ]
 # uncomment line below if verilog (.v) files present:
 read_verilog  [ glob ./hdl/*.v ]

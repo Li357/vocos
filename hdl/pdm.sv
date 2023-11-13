@@ -23,7 +23,7 @@ module pdm #(parameter WIDTH = 16)
     if (rst_in) begin
       data_out <= 0;
       error <= 0;
-    end else if (din >= error) begin
+    end else if (data_in >= error) begin
       data_out <= 1;
       error <= error_1;
     end else begin

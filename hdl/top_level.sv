@@ -7,6 +7,7 @@ module top_level(
   input wire          usb_int,
   input wire          usb_miso,
   input wire          uart_rxd,
+  input wire [15:0]   sw,
   output logic        usb_n_rst,
   output logic        usb_n_ss,
   output logic        usb_mosi,
@@ -23,6 +24,8 @@ module top_level(
   output logic spkl, 
   output logic spkr //speaker outputs
 );
+
+  import constants::*;
 
   logic clk_98_3mhz;
   audio_clk_wiz wiz (.clk_in(clk_100mhz), .clk_out(clk_98_3mhz));
@@ -71,41 +74,55 @@ module top_level(
   //   .midi_out(midi_out)
   // );
 
-  logic [6:0] ss_c;
+  // logic [6:0] ss_c;
 
-  seven_segment_controller mssc(
-    .clk_in(clk_98_3mhz),
-    .rst_in(sys_rst),
-    .val_in(midi_out),
-    .cat_out(ss_c),
-    .an_out({ss0_an, ss1_an})
-  );
-  assign ss0_c = ss_c;
-  assign ss1_c = ss_c;
+  // seven_segment_controller mssc(
+  //   .clk_in(clk_98_3mhz),
+  //   .rst_in(sys_rst),
+  //   .val_in(midi_out),
+  //   .cat_out(ss_c),
+  //   .an_out({ss0_an, ss1_an})
+  // );
+  // assign ss0_c = ss_c;
+  // assign ss1_c = ss_c;
 
-  assign led[15:0] = out;
+  // assign led[15:0] = out;
 
-  localparam PHASE_INCR = 32'b0100101100011000;
-
-  logic pdm_tick;
-  logic [10:0] pdm_count;
-  assign pdm_tick = pdm_count[10] == 0;
+  // Synthesizer DDS clocked at 98.3MHz / 512 = 48kHz * 4 = 192kHz
+  logic [$clog2(SYNTH_CYCLES)-1:0] clk_synth_count;
+  logic clk_synth;
+  assign clk_synth = clk_synth_count[$clog2(SYNTH_CYCLES)-1] == 0;
   always_ff @(posedge clk_98_3mhz) begin
-    pdm_count <= pdm_count + 1;
+    clk_synth_count <= clk_synth_count + 1;
   end
 
-  logic signed [10:0] synth_out;
+  // PDM clocked at 98.3MHz / 8 = 48kHz * 256 = 12.3MHz
+  // for 256-times downsampling
+  logic [$clog2(PDM_CYCLES)-1:0] clk_pdm_count;
+  logic clk_pdm;
+  assign clk_pdm = clk_pdm_count[$clog2(PDM_CYCLES)-1] == 0;
+  always_ff @(posedge clk_98_3mhz) begin
+    clk_pdm_count <= clk_pdm_count + 1;
+  end
+
+  logic [SYNTH_PHASE_ACC_BITS-1:0] phase_acc;
+  switch_keyboard keyboard(
+    .sw_in(sw),
+    .phase_acc_out(phase_acc)
+  );
+
+  logic signed [SYNTH_WIDTH-1:0] synth_out;
   synthesizer synth(
-    .clk_in(clk_98_3mhz),
+    .clk_in(clk_synth),
     .rst_in(sys_rst),
-    .phase_incr_in(PHASE_INCR),
-    .audio_out(synth_out)
+    .phase_incr_in(phase_acc),
+    .synth_out(synth_out)
   );
 
   // delta-sigma modulator for DAC
   logic audio_out;
-  pdm #(.WIDTH(11)) p(
-    .clk_in(clk_98_3mhz),
+  pdm #(.WIDTH(SYNTH_WIDTH)) p(
+    .clk_in(clk_pdm_count),
     .rst_in(sys_rst),
     .data_in(synth_out),
     .data_out(audio_out)

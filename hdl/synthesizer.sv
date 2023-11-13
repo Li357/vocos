@@ -7,40 +7,21 @@
 `define FPATH(X) `"data/X`"
 `endif  /* ! SYNTHESIS */
 
-module synthesizer(
+module synthesizer
+  import constants::*;
+(
   input wire clk_in,
   input wire rst_in,
-  input wire [31:0] phase_incr_in,
-  output logic signed [10:0] audio_out,
+  input wire [SYNTH_PHASE_ACC_BITS-1:0] phase_incr_in,
+  output logic signed [SYNTH_WIDTH-1:0] synth_out
 );
 
-  localparam SAMPLES = 4096;
-  localparam SAMPLE_WIDTH = 11;
-  localparam SAMPLE_ADDR_BITS = $clog2(SAMPLES);
-
-  logic signed [10:0] sine_lut_out;
-  logic [31:0] phase_acc;
-
-  xilinx_true_dual_port_read_first_2_clock_ram #(
-    .RAM_WIDTH(SAMPLE_WIDTH),
-    .RAM_DEPTH(SAMPLES),
-    .INIT_FILE(`FPATH(sine.mem))
-  ) sine_lut(
-    .addra(phase_acc[31 -: SAMPLE_ADDR_BITS]),
-    .clka(clk_in),
-    .wea(1'b0),
-    .ena(1'b1),
-    .rsta(rst_in),
-    .regcea(1'b1),
-    .douta(sine_lut_out)
+  sine s(
+    .clk_in(clk_in),
+    .rst_in(rst_in),
+    .phase_incr_in(phase_incr_in),
+    .val_out(synth_out)
   );
-
-  always_ff @(posedge clk_in) begin
-    if (rst_in) phase_acc <= 0;
-    else phase_acc <= phase_acc + phase_incr_in; 
-  end
-
-  assign audio_out = sine_lut_out >>> 32;
 
 endmodule
 

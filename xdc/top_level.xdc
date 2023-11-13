@@ -26,6 +26,23 @@ set_property -dict {PACKAGE_PIN D18  IOSTANDARD LVCMOS33} [ get_ports {led[13]} 
 set_property -dict {PACKAGE_PIN E18  IOSTANDARD LVCMOS33} [ get_ports {led[14]} ]
 set_property -dict {PACKAGE_PIN G17  IOSTANDARD LVCMOS33} [ get_ports {led[15]} ]
 
+set_property -dict {PACKAGE_PIN G1  IOSTANDARD LVCMOS33} [ get_ports "sw[0]" ]
+set_property -dict {PACKAGE_PIN F2  IOSTANDARD LVCMOS33} [ get_ports "sw[1]" ]
+set_property -dict {PACKAGE_PIN F1  IOSTANDARD LVCMOS33} [ get_ports "sw[2]" ]
+set_property -dict {PACKAGE_PIN E2  IOSTANDARD LVCMOS33} [ get_ports "sw[3]" ]
+set_property -dict {PACKAGE_PIN E1  IOSTANDARD LVCMOS33} [ get_ports "sw[4]" ]
+set_property -dict {PACKAGE_PIN D2  IOSTANDARD LVCMOS33} [ get_ports "sw[5]" ]
+set_property -dict {PACKAGE_PIN D1  IOSTANDARD LVCMOS33} [ get_ports "sw[6]" ]
+set_property -dict {PACKAGE_PIN C2  IOSTANDARD LVCMOS33} [ get_ports "sw[7]" ]
+set_property -dict {PACKAGE_PIN B2  IOSTANDARD LVCMOS33} [ get_ports "sw[8]" ]
+set_property -dict {PACKAGE_PIN A4  IOSTANDARD LVCMOS33} [ get_ports "sw[9]" ]
+set_property -dict {PACKAGE_PIN A5  IOSTANDARD LVCMOS33} [ get_ports "sw[10]" ]
+set_property -dict {PACKAGE_PIN A6  IOSTANDARD LVCMOS33} [ get_ports "sw[11]" ]
+set_property -dict {PACKAGE_PIN C7  IOSTANDARD LVCMOS33} [ get_ports "sw[12]" ]
+set_property -dict {PACKAGE_PIN A7  IOSTANDARD LVCMOS33} [ get_ports "sw[13]" ]
+set_property -dict {PACKAGE_PIN B7  IOSTANDARD LVCMOS33} [ get_ports "sw[14]" ]
+set_property -dict {PACKAGE_PIN A8  IOSTANDARD LVCMOS33} [ get_ports "sw[15]" ]
+
 ## Switches
 #set_property -dict { PACKAGE_PIN H14   IOSTANDARD LVCMOS33 } [get_ports { sw[0] }]; #IO_L20N_T3_A19_15 Sch=sw[0]
 #set_property -dict { PACKAGE_PIN H18   IOSTANDARD LVCMOS33 } [get_ports { sw[1] }]; #IO_L21P_T3_DQS_15 Sch=sw[1]
