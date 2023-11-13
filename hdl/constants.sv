@@ -1,6 +1,3 @@
-`timescale 1ns / 1ps
-`default_nettype none
-
 package constants;
 
   parameter SYNTH_CYCLES = 512;
@@ -13,5 +10,3 @@ package constants;
   parameter SYNTH_PHASE_ACC_BITS = 24;
 
 endpackage
-
-`default_nettype wire

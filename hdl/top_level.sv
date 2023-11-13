@@ -48,14 +48,14 @@ module top_level(
   //   end
   // end
 
-  assign pmoda[0] = usb_miso;
-  assign pmoda[1] = usb_mosi;
-  assign pmoda[2] = usb_clk;
-  assign pmoda[3] = usb_n_ss;
-  assign pmoda[4] = usb_int;
+  // assign pmoda[0] = usb_miso;
+  // assign pmoda[1] = usb_mosi;
+  // assign pmoda[2] = usb_clk;
+  // assign pmoda[3] = usb_n_ss;
+  // assign pmoda[4] = usb_int;
 
-  logic [15:0] out;
-  logic [31:0] midi_out;
+  // logic [15:0] out;
+  // logic [31:0] midi_out;
 
   // usb_controller usbc(
   //   .clk_in(clk_25mhz),
@@ -96,15 +96,6 @@ module top_level(
     clk_synth_count <= clk_synth_count + 1;
   end
 
-  // PDM clocked at 98.3MHz / 8 = 48kHz * 256 = 12.3MHz
-  // for 256-times downsampling
-  logic [$clog2(PDM_CYCLES)-1:0] clk_pdm_count;
-  logic clk_pdm;
-  assign clk_pdm = clk_pdm_count[$clog2(PDM_CYCLES)-1] == 0;
-  always_ff @(posedge clk_98_3mhz) begin
-    clk_pdm_count <= clk_pdm_count + 1;
-  end
-
   logic [SYNTH_PHASE_ACC_BITS-1:0] phase_acc;
   switch_keyboard keyboard(
     .sw_in(sw),
@@ -119,6 +110,15 @@ module top_level(
     .synth_out(synth_out)
   );
 
+  // PDM clocked at 98.3MHz / 8 = 48kHz * 256 = 12.3MHz
+  // for 256-times downsampling
+  logic [$clog2(PDM_CYCLES)-1:0] clk_pdm_count;
+  logic clk_pdm;
+  assign clk_pdm = clk_pdm_count[$clog2(PDM_CYCLES)-1] == 0;
+  always_ff @(posedge clk_98_3mhz) begin
+    clk_pdm_count <= clk_pdm_count + 1;
+  end
+
   // delta-sigma modulator for DAC
   logic audio_out;
   pdm #(.WIDTH(SYNTH_WIDTH)) p(
@@ -130,6 +130,18 @@ module top_level(
 
   assign spkl = audio_out;
   assign spkr = audio_out;
+
+  // I2S2, generates an internal SCLK at 48 = 24 bits * 2 channels times
+  // the sampling rate by running LRCK = 192kHz and MCLK = 96 * LRCK
+  // pmod_i2s2 if(
+  //   .clk_in(clk_98_3mhz)
+  //   .sample_in(synth_out),
+  //   .mclk_out(pmoda[0]),
+  //   .lrck_out(pmoda[1]),
+  //   .sclk_out(pmoda[2]),
+  //   .sdin_out(pmoda[3])
+  // );
+
 endmodule
 
 `default_nettype wire
