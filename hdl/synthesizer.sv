@@ -33,9 +33,18 @@ module synthesizer
     .val_out(sq_out)
   );
 
+  logic [SYNTH_WIDTH-1:0] tri_out;
+  triangle tr(
+    .clk_in(clk_in),
+    .rst_in(rst_in),
+    .phase_incr_in(phase_incr_in),
+    .val_out(tri_out)
+  );
+
   always_comb begin
     case (wave_type_in)
       3'b001: synth_out = sq_out;
+      3'b010: synth_out = tri_out;
       default: synth_out = sine_out;
     endcase
   end

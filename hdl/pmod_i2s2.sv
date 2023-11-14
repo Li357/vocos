@@ -18,8 +18,6 @@ module pmod_i2s2
 
   // run sclk at mclk / 16 = 24-bit * 2 channels * 48kHz
   localparam SCLK_CYCLES = 16;
-  localparam LRCK_CYCLES = 16 * 48;
-
   logic [$clog2(SCLK_CYCLES)-1:0] sclk_count;
   assign sclk_out = sclk_count[$clog2(SCLK_CYCLES)-1] == 0;
   always_ff @(posedge clk_in) begin
@@ -30,22 +28,22 @@ module pmod_i2s2
   logic [$clog2(SYNTH_WIDTH)-1:0] prev_sample_index;
   logic [$clog2(SYNTH_WIDTH)-1:0] sample_index;
 
+  localparam LRCK_CYCLES = 48;
   logic [$clog2(LRCK_CYCLES)-1:0] lrck_count;
-  assign lrck_out = lrck_count >= 384;
+  assign lrck_out = lrck_count >= 24;
   always_ff @(posedge sclk_out) begin
     if (rst_in) begin
       lrck_count <= 0;
       sample_index <= 0;
       prev_sample_index <= 0;
     end else begin
-      lrck_count <= lrck_count + 1;
+      lrck_count <= lrck_count == 47 ? 0 : lrck_count + 1;
       sample_index <= sample_index == 23 ? 0 : sample_index + 1;
-      prev_sample_index <= sample_index;
     end
   end
 
   always_ff @(negedge sclk_out) begin
-    sdin_out <= sample_in[prev_sample_index];
+    sdin_out <= sample_in[SYNTH_WIDTH - 1 - sample_index];
   end
 
 endmodule
