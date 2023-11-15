@@ -1,0 +1,15 @@
+---
+cores:
+
+  voxos_io:
+    type: io
+
+    inputs:
+      mic_level: 32
+
+uart:
+  port: "/dev/cu.usbserial-88742923013A1"
+  baudrate: 3000000
+  clock_freq: 98333333
+
+

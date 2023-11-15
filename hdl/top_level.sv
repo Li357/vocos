@@ -8,12 +8,16 @@ module top_level(
   input wire          usb_miso,
   input wire          uart_rxd,
   input wire [15:0]   sw,
+  input wire pmodb_dout,
   output logic        usb_n_rst,
   output logic        usb_n_ss,
   output logic        usb_mosi,
   output logic        usb_clk,
   output logic [15:0] led,
   output logic [7:0]  pmoda,
+  output logic        pmodb_ws,
+  output logic        pmodb_bclk,
+  output logic        pmodb_sel,
   output logic        uart_txd,
   output logic [3:0]  ss0_an,//anode control for upper four digits of seven-seg display
   output logic [3:0]  ss1_an,//anode control for lower four digits of seven-seg display
@@ -116,8 +120,36 @@ module top_level(
     .synth_out(synth_out)
   );
 
-  // // PDM clocked at 98.3MHz / 8 = 48kHz * 256 = 12.3MHz
-  // // for 256-times downsampling
+  logic [23:0] mic_sample;
+  assign pmodb_sel = 0;
+  pmod_mic mic(
+    .clk_in(clk_98_3mhz),
+    .ws_out(pmodb_ws),
+    .data_in(pmodb_dout),
+    .bclk_out(pmodb_bclk),
+    .sample_out(mic_sample)
+  );
+
+  // I2S2, generates an internal SCLK at 48 = 24 bits * 2 channels times
+  // the sampling rate by running LRCK = 192kHz and MCLK = 96 * LRCK
+  pmod_i2s2 iface(
+    .clk_in(clk_i2s),
+    .sample_in(mic_sample << 6),
+    .mclk_out(pmoda[0]),
+    .lrck_out(pmoda[1]),
+    .sclk_out(pmoda[2]),
+    .sdin_out(pmoda[3])
+  );
+
+  // manta m(
+  //   .clk(clk_98_3mhz),
+  //   .rx(uart_rxd),
+  //   .tx(uart_txd),
+  //   .mic_level({8'b0, mic_sample})
+  // );
+
+  // PDM clocked at 98.3MHz / 8 = 48kHz * 256 = 12.3MHz
+  // for 256-times downsampling
   // logic [$clog2(PDM_CYCLES)-1:0] clk_pdm_count;
   // logic clk_pdm;
   // assign clk_pdm = clk_pdm_count[$clog2(PDM_CYCLES)-1] == 0;
@@ -125,28 +157,34 @@ module top_level(
   //   clk_pdm_count <= clk_pdm_count + 1;
   // end
 
+  // logic [23:0] s;
+  // always_ff @(posedge clk_98_3mhz) begin
+  //   if (mic_sample_valid) s <= mic_sample;
+  // end
+
   // // delta-sigma modulator for DAC
   // logic audio_out;
-  // pdm #(.WIDTH(SYNTH_WIDTH)) p(
+  // pdm #(.WIDTH(18)) p(
   //   .clk_in(clk_pdm_count),
   //   .rst_in(sys_rst),
-  //   .data_in(synth_out),
+  //   .data_in(mic_sample[17:0]),
   //   .data_out(audio_out)
   // );
 
   // assign spkl = audio_out;
   // assign spkr = audio_out;
 
-  // I2S2, generates an internal SCLK at 48 = 24 bits * 2 channels times
-  // the sampling rate by running LRCK = 192kHz and MCLK = 96 * LRCK
-  pmod_i2s2 iface(
-    .clk_in(clk_i2s),
-    .sample_in(synth_out),
-    .mclk_out(pmoda[0]),
-    .lrck_out(pmoda[1]),
-    .sclk_out(pmoda[2]),
-    .sdin_out(pmoda[3])
-  );
+  // logic [6:0] ss_c;
+  // seven_segment_controller mssc(
+  //   .clk_in(clk_98_3mhz),
+  //   .rst_in(sys_rst),
+  //   .val_in(disp),
+  //   .cat_out(ss_c),
+  //   .an_out({ss0_an, ss1_an})
+  // );
+  // assign ss0_c = ss_c;
+  // assign ss1_c = ss_c;
+
 
 endmodule
 
