@@ -6,7 +6,8 @@ module biquad_tb();
   logic clk_in;
   logic rst_in;
   logic [23:0] sample;
-  logic [23:0] filtered;
+  logic [63:0] b1_out;
+  logic [23:0] b2_out;
 
   biquad #(
     .b0(32'd75467), 
@@ -18,7 +19,20 @@ module biquad_tb();
     .clk_in(clk_in),
     .rst_in(rst_in),
     .sample_in(sample),
-    .sample_out(filtered)
+    .sample_out(b1_out)
+  );
+
+  biquad #(
+    .b0(32'd75467), 
+    .b1(32'd0), 
+    .b2(-32'd75467),
+    .a1(-32'd1403483), 
+    .a2(32'd946853)
+  ) uut2(
+    .clk_in(clk_in),
+    .rst_in(rst_in),
+    .sample_in(b1_out),
+    .sample_out(b2_out)
   );
 
   always begin
@@ -46,7 +60,7 @@ module biquad_tb();
     sample = 32'h00400000;
     #20;
     sample = 32'h00500000;
-    #200;
+    #400;
 
     $display("Finishing");
     $finish;

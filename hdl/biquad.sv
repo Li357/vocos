@@ -2,7 +2,6 @@
 `default_nettype none
 
 module biquad #(
-  parameter WIDTH = 24,
   parameter SHIFT = 20,
   parameter signed [31:0] a1,
   parameter signed [31:0] a2,
@@ -13,8 +12,8 @@ module biquad #(
 (
   input wire clk_in,
   input wire rst_in,
-  input wire signed [WIDTH-1:0] sample_in,
-  output logic signed [WIDTH-1:0] sample_out
+  input wire signed [63:0] sample_in,
+  output logic signed [63:0] sample_out
 );
 
   // Direct Form I
@@ -57,7 +56,7 @@ module biquad #(
     end
   end
 
-  assign sample_out = y_n[WIDTH-1:0];
+  assign sample_out = y_n;
 
 endmodule
 
