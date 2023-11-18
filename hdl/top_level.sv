@@ -47,15 +47,15 @@ module top_level(
 
   // the onboard MAX3421E USB chip can be clocked up to 26MHz
   // this is around 3MHz
-  // logic clk_25mhz;
-  // logic [3:0] clk_25mhz_count;
-  // always_ff @(posedge clk_100mhz) begin
-  //   if (sys_rst) clk_25mhz_count <= 0;
-  //   else begin
-  //     if (clk_25mhz_count == 7) clk_25mhz <= ~clk_25mhz;
-  //     clk_25mhz_count <= clk_25mhz_count + 1;
-  //   end
-  // end
+  logic clk_25mhz;
+  logic [3:0] clk_25mhz_count;
+  always_ff @(posedge clk_100mhz) begin
+    if (sys_rst) clk_25mhz_count <= 0;
+    else begin
+      if (clk_25mhz_count == 7) clk_25mhz <= ~clk_25mhz;
+      clk_25mhz_count <= clk_25mhz_count + 1;
+    end
+  end
 
   // assign pmoda[0] = usb_miso;
   // assign pmoda[1] = usb_mosi;
@@ -63,39 +63,39 @@ module top_level(
   // assign pmoda[3] = usb_n_ss;
   // assign pmoda[4] = usb_int;
 
-  // logic [15:0] out;
-  // logic [31:0] midi_out;
+  logic [15:0] out;
+  logic [31:0] midi_out;
 
-  // usb_controller usbc(
-  //   .clk_in(clk_25mhz),
-  //   .rst_in(sys_rst),
-  //   .int_in(usb_int),
-  //   .miso_in(usb_miso),
-  //   .n_rst_out(usb_n_rst),
-  //   .n_ss_out(usb_n_ss),
-  //   .mosi_out(usb_mosi),
-  //   .clk_out(usb_clk),
-  //   .bytes_out(out),
+  usb_controller usbc(
+    .clk_in(clk_25mhz),
+    .rst_in(sys_rst),
+    .int_in(usb_int),
+    .miso_in(usb_miso),
+    .n_rst_out(usb_n_rst),
+    .n_ss_out(usb_n_ss),
+    .mosi_out(usb_mosi),
+    .clk_out(usb_clk),
+    .bytes_out(out),
 
-  //   .rxd_in(uart_rxd),
-  //   .txd_out(uart_txd),
+    .rxd_in(uart_rxd),
+    .txd_out(uart_txd),
 
-  //   .midi_out(midi_out)
-  // );
+    .midi_out(midi_out)
+  );
 
-  // logic [6:0] ss_c;
+  logic [6:0] ss_c;
 
-  // seven_segment_controller mssc(
-  //   .clk_in(clk_98_3mhz),
-  //   .rst_in(sys_rst),
-  //   .val_in(midi_out),
-  //   .cat_out(ss_c),
-  //   .an_out({ss0_an, ss1_an})
-  // );
-  // assign ss0_c = ss_c;
-  // assign ss1_c = ss_c;
+  seven_segment_controller mssc(
+    .clk_in(clk_98_3mhz),
+    .rst_in(sys_rst),
+    .val_in(midi_out),
+    .cat_out(ss_c),
+    .an_out({ss0_an, ss1_an})
+  );
+  assign ss0_c = ss_c;
+  assign ss1_c = ss_c;
 
-  // assign led[15:0] = out;
+  assign led[15:0] = out;
 
   // Synthesizer DDS clocked at 98.3MHz / 512 = 48kHz * 4 = 192kHz
   logic [$clog2(SYNTH_CYCLES)-1:0] clk_synth_count;

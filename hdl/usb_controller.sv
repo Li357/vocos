@@ -157,7 +157,7 @@ SETUP_GET_DESC_WAIT,
   };
   // HXFR value to send SETUP packet after loading SUDFIFO
   localparam logic [7:0] SET_PERADDR_HXFR    [63:0] = '{0: flip8({5'd30, WRITE}), 1: flip8(8'b00010000), default: '0};
-  localparam logic [7:0] SET_CONFIG_HXFR     [63:0] = '{0: flip8({5'd30, WRITE}), 1: flip8(8'b10100000), default: '0};
+  localparam logic [7:0] SET_CONFIG_HXFR     [63:0] = '{0: flip8({5'd30, WRITE}), 1: flip8(8'b00010000), default: '0};
   localparam logic [7:0] GET_DESC_TOG     [63:0] = '{0: flip8({5'd29, WRITE}), 1: flip8(8'b00100000), default: '0};
   localparam logic [7:0] GET_DESC_HXFR     [63:0] = '{0: flip8({5'd30, WRITE}), 1: flip8(8'b00000000), default: '0};
   localparam logic [7:0] GET_DESC_TOGGLES     [63:0] = '{0: flip8({5'd25, WRITE}), 1: flip8(8'b10000000), default: '0};
@@ -480,20 +480,6 @@ SETUP_SET_PERADDR_REG0:               tx_snd_bytes = SET_PERADDR_0;
         // model) but I'm going to keep that as part of the stretch goal.
 
         // Let's start setting up USB!
-
-        SETUP_SET_PERADDR_REG0: begin
-          if (tx_finished) begin
-            state <= SETUP_READ_PERADDR0;
-          end
-        end
-
-        SETUP_READ_PERADDR0: begin
-          if (tx_finished) begin
-            if (tx_rcv_bytes[1] == 0) begin
-              state <= SETUP_GET_DESC_SUDFIFO;
-            end else state <= SETUP_SET_PERADDR_REG0;
-          end
-        end
         
         SETUP_GET_DESC_SUDFIFO: begin
           if (tx_finished) begin
@@ -518,6 +504,7 @@ SETUP_SET_PERADDR_REG0:               tx_snd_bytes = SET_PERADDR_0;
         end
 
         SETUP_GET_DESC_WAIT: begin
+          midi_out[31:28] <= 8'hE;
           if (wait_count == 100_000) begin
             txing <= 1;
             state <= SETUP_SET_PERADDR_READ;
@@ -543,8 +530,9 @@ SETUP_SET_PERADDR_REG0:               tx_snd_bytes = SET_PERADDR_0;
         SETUP_GET_DESC_IN_WAIT: begin
           if (wait_count == 20) begin
             txing <= 1;
+          midi_out[31:28] <= 8'hB;
             state <= SETUP_SET_PERADDR_READ;
-            next_state <= SETUP_GET_DESC_WRITE;
+            next_state <= WAITING;//SETUP_GET_DESC_WRITE;
             prev_state <= SETUP_GET_DESC_IN;
             wait_count <= 0;
           end else wait_count <= wait_count + 1;
@@ -618,7 +606,6 @@ SETUP_SET_PERADDR_REG0:               tx_snd_bytes = SET_PERADDR_0;
 
         SETUP_SET_PERADDR_READ: begin
           if (tx_finished) begin
-            midi_out[31:28] <= 8'hF;
             midi_out[3:0] <= tx_rcv_bytes[1][3:0];
             bytes_out[15:8] <= tx_rcv_bytes[0];
             bytes_out[7:0] <= tx_rcv_bytes[1];
@@ -655,10 +642,12 @@ SETUP_SET_PERADDR_REG0:               tx_snd_bytes = SET_PERADDR_0;
         end
 
         SETUP_READ_PERADDR: begin
+
+          midi_out[31:28] <= 8'hD;
           if (tx_finished) begin
             if (tx_rcv_bytes[1] == 1) begin
-              state <= INIT_BUSRESET;
-              next_state <= SETUP_SET_CONFIG_SUDFIFO;
+              state <= SETUP_GET_DESC_SUDFIFO;//SETUP_SET_CONFIG_SUDFIFO; //INIT_BUSRESET;
+              //next_state <= SETUP_SET_CONFIG_SUDFIFO;
             end else state <= SETUP_SET_PERADDR_REG;
           end
         end
@@ -687,13 +676,15 @@ SETUP_SET_PERADDR_REG0:               tx_snd_bytes = SET_PERADDR_0;
 
         SETUP_SET_CONFIG_SUDFIFO_READ: begin
           if (tx_finished) begin
-            if (tx_rcv_bytes[2] == 5) begin
+            if (tx_rcv_bytes[2] == 9) begin
               state <= SETUP_SET_CONFIG_HXFR;
             end else state <= SETUP_SET_CONFIG_SUDFIFO;
           end
         end
 
         SETUP_SET_CONFIG_HXFR: begin
+
+            midi_out[31:28] <= 4'h4;
           if (tx_finished) begin
             state <= SETUP_SET_CONFIG_WAIT;
             txing <= 0;
@@ -705,7 +696,7 @@ SETUP_SET_PERADDR_REG0:               tx_snd_bytes = SET_PERADDR_0;
             txing <= 1;
             state <= SETUP_SET_CONFIG_READ;
             next_state <= SETUP_SET_CONFIG_CLEAR;
-            prev_state <= SETUP_SET_CONFIG_HXFR;
+            prev_state <= SETUP_SET_CONFIG_SUDFIFO;
             wait_count <= 0;
           end else wait_count <= wait_count + 1;
         end
@@ -717,6 +708,8 @@ SETUP_SET_PERADDR_REG0:               tx_snd_bytes = SET_PERADDR_0;
         end
 
         SETUP_SET_CONFIG_STATUS: begin
+
+            midi_out[31:28] <= 4'h5;
           if (tx_finished) begin
             state <= SETUP_SET_CONFIG_STATUS_WAIT;
           end
@@ -734,7 +727,6 @@ SETUP_SET_PERADDR_REG0:               tx_snd_bytes = SET_PERADDR_0;
 
         SETUP_SET_CONFIG_READ: begin
           if (tx_finished) begin
-            midi_out[31:28] <= 4'hC;
             midi_out[3:0] <= tx_rcv_bytes[1][3:0];
             bytes_out[15:8] <= tx_rcv_bytes[0];
             bytes_out[7:0] <= tx_rcv_bytes[1];
@@ -756,6 +748,8 @@ SETUP_SET_PERADDR_REG0:               tx_snd_bytes = SET_PERADDR_0;
         end
 
         SETUP_SET_CONFIG_FINISH: begin
+
+            midi_out[31:28] <= 4'h6;
           if (wait_count == 190_000) begin
             txing <= 1;
             state <= POLL_READ_TOGGLES;
