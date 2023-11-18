@@ -20,7 +20,7 @@ module envelope #(
   assign rectified = sample_in[63] ? -rectified : rectified;
 
   double_biquad #(
-    .WIDTH(WIDTH), .DEPTH(DEPTH),
+    .WIDTH(WIDTH),
     .coeffs1(COEFFS1),
     .coeffs2(COEFFS2)
   ) b1(

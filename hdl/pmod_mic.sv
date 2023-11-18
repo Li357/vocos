@@ -7,7 +7,7 @@ module pmod_mic
   input wire clk_in,
   input wire rst_in,
   input wire data_in,
-  output logic [SYNTH_WIDTH-1:0] sample_out,
+  output logic signed [SYNTH_WIDTH-1:0] sample_out,
   output logic valid_out,
   output logic bclk_out,
   output logic ws_out
@@ -48,7 +48,7 @@ module pmod_mic
         sample[MIC_WIDTH - 1 - ws_count] <= data_in;
         if (ws_count == MIC_WIDTH - 1) begin
           valid_out <= 1;
-          sample_out <= sample;
+          sample_out <= sample << 6; // extend up to 24 bits
         end
       end
     end

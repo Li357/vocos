@@ -1,10 +1,30 @@
 from manta import Manta
-import struct
+import matplotlib.pyplot as plt
+from matplotlib.animation import FuncAnimation
 
 m = Manta('../manta.yaml')
 
+# fig, ax = plt.subplots(figsize=(6, 3))
+# buf = [0] * 100
+# fil = [0] * 100
+ 
+# x = range(100)
+# ln, ln2 = plt.plot(x, buf[:100], '-', x, fil[:100], 'g-')
+
+# def update(frame):
+#     out = m.voxos_io.mic_level.get()
+#     print(temp1)
+#     buf.append(out)
+#     fil.append(temp1)
+#     ln.set_data(x, buf[-100:])
+#     ln2.set_data(x, fil[-100:])
+#     ax.autoscale()
+#     ax.set_ylim(min(buf[-100:]), max(buf[-100:]))
+#     return ln,
+ 
+# animation = FuncAnimation(fig, update, interval=50)
+# plt.show()
+
 while True:
-  # 24-bit signed interpreted as integer
-  out = m.voxos_io.mic_level.get()
-  three = struct.pack('<I', out)[:-1]
-  print(struct.unpack('<i', three + (b'\0' if three[2] < 128 else b'\xff'))[0])
+  temp1 = m.voxos_io.temp1.get()
+  print(f'{temp1}')

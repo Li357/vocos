@@ -6,12 +6,16 @@ module pmod_i2s2
 (
   input wire clk_in,
   input wire rst_in,
+  input wire valid_in,
   input wire [SYNTH_WIDTH-1:0] sample_in,
   output logic mclk_out,
   output logic lrck_out,
   output logic sclk_out,
   output logic sdin_out
 );
+
+  typedef enum { WAITING, TXING } state_t;
+  state_t state;
 
   // run mclk at ~36.864MHz
   assign mclk_out = clk_in;
@@ -36,14 +40,22 @@ module pmod_i2s2
       lrck_count <= 0;
       sample_index <= 0;
       prev_sample_index <= 0;
+      state <= WAITING;
     end else begin
-      lrck_count <= lrck_count == 47 ? 0 : lrck_count + 1;
-      sample_index <= sample_index == 23 ? 0 : sample_index + 1;
+      case (state)
+        WAITING: begin
+          if (valid_in) state <= TXING;
+        end
+        TXING: begin
+          lrck_count <= lrck_count == 47 ? 0 : lrck_count + 1;
+          sample_index <= sample_index == 23 ? 0 : sample_index + 1;
+        end
+      endcase
     end
   end
 
   always_ff @(negedge sclk_out) begin
-    sdin_out <= sample_in[SYNTH_WIDTH - 1 - sample_index];
+    if (state == TXING) sdin_out <= sample_in[SYNTH_WIDTH - 1 - sample_index];
   end
 
 endmodule

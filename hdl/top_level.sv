@@ -47,15 +47,15 @@ module top_level(
 
   // the onboard MAX3421E USB chip can be clocked up to 26MHz
   // this is around 3MHz
-  logic clk_25mhz;
-  logic [3:0] clk_25mhz_count;
-  always_ff @(posedge clk_100mhz) begin
-    if (sys_rst) clk_25mhz_count <= 0;
-    else begin
-      if (clk_25mhz_count == 7) clk_25mhz <= ~clk_25mhz;
-      clk_25mhz_count <= clk_25mhz_count + 1;
-    end
-  end
+  // logic clk_25mhz;
+  // logic [3:0] clk_25mhz_count;
+  // always_ff @(posedge clk_100mhz) begin
+  //   if (sys_rst) clk_25mhz_count <= 0;
+  //   else begin
+  //     if (clk_25mhz_count == 7) clk_25mhz <= ~clk_25mhz;
+  //     clk_25mhz_count <= clk_25mhz_count + 1;
+  //   end
+  // end
 
   // assign pmoda[0] = usb_miso;
   // assign pmoda[1] = usb_mosi;
@@ -63,39 +63,39 @@ module top_level(
   // assign pmoda[3] = usb_n_ss;
   // assign pmoda[4] = usb_int;
 
-  logic [15:0] out;
-  logic [31:0] midi_out;
+  // logic [15:0] out;
+  // logic [31:0] midi_out;
 
-  usb_controller usbc(
-    .clk_in(clk_25mhz),
-    .rst_in(sys_rst),
-    .int_in(usb_int),
-    .miso_in(usb_miso),
-    .n_rst_out(usb_n_rst),
-    .n_ss_out(usb_n_ss),
-    .mosi_out(usb_mosi),
-    .clk_out(usb_clk),
-    .bytes_out(out),
+  // usb_controller usbc(
+  //   .clk_in(clk_25mhz),
+  //   .rst_in(sys_rst),
+  //   .int_in(usb_int),
+  //   .miso_in(usb_miso),
+  //   .n_rst_out(usb_n_rst),
+  //   .n_ss_out(usb_n_ss),
+  //   .mosi_out(usb_mosi),
+  //   .clk_out(usb_clk),
+  //   .bytes_out(out),
 
-    .rxd_in(uart_rxd),
-    .txd_out(uart_txd),
+  //   .rxd_in(uart_rxd),
+  //   .txd_out(uart_txd),
 
-    .midi_out(midi_out)
-  );
+  //   .midi_out(midi_out)
+  // );
 
-  logic [6:0] ss_c;
+  // logic [6:0] ss_c;
 
-  seven_segment_controller mssc(
-    .clk_in(clk_98_3mhz),
-    .rst_in(sys_rst),
-    .val_in(midi_out),
-    .cat_out(ss_c),
-    .an_out({ss0_an, ss1_an})
-  );
-  assign ss0_c = ss_c;
-  assign ss1_c = ss_c;
+  // seven_segment_controller mssc(
+  //   .clk_in(clk_98_3mhz),
+  //   .rst_in(sys_rst),
+  //   .val_in(midi_out),
+  //   .cat_out(ss_c),
+  //   .an_out({ss0_an, ss1_an})
+  // );
+  // assign ss0_c = ss_c;
+  // assign ss1_c = ss_c;
 
-  assign led[15:0] = out;
+  // assign led[15:0] = out;
 
   // Synthesizer DDS clocked at 98.3MHz / 512 = 48kHz * 4 = 192kHz
   logic [$clog2(SYNTH_CYCLES)-1:0] clk_synth_count;
@@ -120,21 +120,37 @@ module top_level(
     .synth_out(synth_out)
   );
 
-  logic [23:0] mic_sample;
+  logic signed [23:0] mic_sample;
+  logic mic_sample_valid;
   assign pmodb_sel = 0;
   pmod_mic mic(
     .clk_in(clk_98_3mhz),
     .ws_out(pmodb_ws),
     .data_in(pmodb_dout),
     .bclk_out(pmodb_bclk),
-    .sample_out(mic_sample)
+    .sample_out(mic_sample),
+    .valid_out(mic_sample_valid)
+  );
+
+  // Filter banks!
+  logic signed [31:0] filtered;
+  logic filtered_sample_valid;
+
+  filterbank fb(
+    .clk_in(clk_98_3mhz),
+    .rst_in(sys_rst),
+    .valid_in(mic_sample_valid),
+    .sample_in(mic_sample),
+    .sample_out(filtered),
+    .valid_out(filtered_sample_valid)
   );
 
   // I2S2, generates an internal SCLK at 48 = 24 bits * 2 channels times
   // the sampling rate by running LRCK = 192kHz and MCLK = 96 * LRCK
   pmod_i2s2 iface(
     .clk_in(clk_i2s),
-    .sample_in(mic_sample << 6),
+    .valid_in(filtered_sample_valid),
+    .sample_in(filtered[23:0]),
     .mclk_out(pmoda[0]),
     .lrck_out(pmoda[1]),
     .sclk_out(pmoda[2]),
@@ -145,7 +161,13 @@ module top_level(
   //   .clk(clk_98_3mhz),
   //   .rx(uart_rxd),
   //   .tx(uart_txd),
-  //   .mic_level({8'b0, mic_sample})
+  //   .mic_level($signed(mic_sample)),
+  //   .filtered(filtered[31:0]),
+  //   .temp1(temp1),
+  //   .temp2(temp2),
+  //   .temp3(temp3),
+  //   .temp4(temp4),
+  //   .temp5(temp5)
   // );
 
   // PDM clocked at 98.3MHz / 8 = 48kHz * 256 = 12.3MHz
@@ -174,16 +196,16 @@ module top_level(
   // assign spkl = audio_out;
   // assign spkr = audio_out;
 
-  // logic [6:0] ss_c;
-  // seven_segment_controller mssc(
-  //   .clk_in(clk_98_3mhz),
-  //   .rst_in(sys_rst),
-  //   .val_in(disp),
-  //   .cat_out(ss_c),
-  //   .an_out({ss0_an, ss1_an})
-  // );
-  // assign ss0_c = ss_c;
-  // assign ss1_c = ss_c;
+  logic [6:0] ss_c;
+  seven_segment_controller mssc(
+    .clk_in(clk_98_3mhz),
+    .rst_in(sys_rst),
+    .val_in(filtered[23:0]),
+    .cat_out(ss_c),
+    .an_out({ss0_an, ss1_an})
+  );
+  assign ss0_c = ss_c;
+  assign ss1_c = ss_c;
 
 
 endmodule
