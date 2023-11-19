@@ -138,8 +138,9 @@ module top_level(
     .valid_out(mic_sample_valid)
   );
 
-  logic signed [31:0] carrier_channels  [N_FILTERS-1:0];
-  logic signed [31:0] envelope_channels [N_FILTERS-1:0];
+  logic signed [31:0] carrier_channels  [7:0];
+  //logic signed [31:0] carrier_out1;
+  logic signed [31:0] envelope_channels [7:0];
   logic filtered_valid;
   filterbank fb(
     .clk_in(clk_98_3mhz),
@@ -148,20 +149,27 @@ module top_level(
     .carrier_sample_in(synth_out),
     .modulator_sample_in(mic_sample),
     .carrier_out(carrier_channels),
-    .envelope_out(envelope_channels),
     .valid_out(filtered_valid)
   );
 
+  logic mixed_valid;
+  logic [23:0] mixed;
   mixer mix(
-    
-  )
+    .clk_in(clk_98_3mhz),
+    .rst_in(sys_rst),
+    .valid_in(filtered_valid),
+    .carrier_channels(carrier_channels),
+    .envelope_channels(envelope_channels),
+    .mixed_out(mixed),
+    .valid_out(mixed_valid)
+  );
 
   // I2S2, generates an internal SCLK at 48 = 24 bits * 2 channels times
   // the sampling rate by running LRCK = 192kHz and MCLK = 96 * LRCK
   pmod_i2s2 iface(
     .clk_in(clk_i2s),
-    .valid_in(filtered_valid),
-    .sample_in(filtered[23:0]),
+    .valid_in(mixed_valid),
+    .sample_in(mixed),
     .mclk_out(pmoda[0]),
     .lrck_out(pmoda[1]),
     .sclk_out(pmoda[2]),
@@ -211,7 +219,7 @@ module top_level(
   seven_segment_controller mssc(
     .clk_in(clk_98_3mhz),
     .rst_in(sys_rst),
-    .val_in(filtered[23:0]),
+    .val_in({envelope_channels[5][31:16], carrier_channels[0][31:16]}),
     .cat_out(ss_c),
     .an_out({ss0_an, ss1_an})
   );
