@@ -1,60 +1,191 @@
 `timescale 1ns / 1ps
 `default_nettype none
 
-module filterbank #(
-  parameter FILTERS = 9
-)
+function [31:0] abs(input [31:0] x);
+  abs = x[31] ? -x : x;
+endfunction
+
+module filterbank #(parameter N_FILTERS = 9)
 (
   input wire clk_in,
   input wire rst_in,
   input wire valid_in,
-  input wire signed [31:0] sample_in,
-  output logic signed [31:0] sample_out,
+  input wire signed [31:0] carrier_sample_in,
+  input wire signed [31:0] modulator_sample_in,
+  output logic signed [31:0] carrier_out  [N_FILTERS-1:0],
+  output logic signed [31:0] envelope_out [N_FILTERS-1:0],
   output logic valid_out
 );
 
-  localparam logic signed [31:0] COEFFS [FILTERS-1:0] [9:0] = '{
-    '{32'd2692, 32'd0, -32'd2692, -32'd2092475, 32'd1044037, 32'd2692, 32'd0, -32'd2692, -32'd2094015, 32'd1045502},
-    '{32'd4609, 32'd0, -32'd4609, -32'd2088978, 32'd1040805, 32'd4609, 32'd0, -32'd4609, -32'd2091702, 32'd1043311},
-    '{32'd7885, 32'd0, -32'd7885, -32'd2082683, 32'd1035289, 32'd7885, 32'd0, -32'd7885, -32'd2087598, 32'd1039565},
-    '{32'd13468, 32'd0, -32'd13468, -32'd2071018, 32'd1025900, 32'd13468, 32'd0, -32'd13468, -32'd2080158, 32'd1033172},
-    '{32'd22943, 32'd0, -32'd22943, -32'd2048500, 32'd1010008, 32'd22943, 32'd0, -32'd22943, -32'd2066225, 32'd1022297},
-    '{32'd38909, 32'd0, -32'd38909, -32'd2002721, 32'd983362, 32'd38909, 32'd0, -32'd38909, -32'd2038930, 32'd1003885},
-    '{32'd65498, 32'd0, -32'd65498, -32'd1904345, 32'd939458, 32'd65498, 32'd0, -32'd65498, -32'd1982403, 32'd972929},
-    '{32'd108948, 32'd0, -32'd108948, -32'd1683483, 32'd869436, 32'd108948, 32'd0, -32'd108948, -32'd1858478, 32'd921291},
-    '{32'd177925, 32'd0, -32'd177925, -32'd1575797, 32'd835325, 32'd177925, 32'd0, -32'd177925, -32'd1184298, 32'd764906}
-  };
+  logic signed [31:0] COEFFS [N_FILTERS:0] [9:0];
+  initial $readmemh(`FPATH(coeffs.mem), COEFFS);
 
-  logic signed [31:0] filtered [FILTERS-1:0];
-  logic signed [FILTERS-1:0] filtered_valid;
+  logic signed [31:0] modulator_past_samples       [1:0];
+  logic signed [31:0] modulator_past_intermediates [N_FILTERS-1:0] [1:0];
+  logic signed [31:0] modulator_past_outputs       [N_FILTERS-1:0] [1:0];
+
+  logic signed [31:0] envelope_past_intermediates  [N_FILTERS-1:0] [1:0];
+  logic signed [31:0] envelope_past_outputs        [N_FILTERS-1:0] [1:0];
+
+  // needs to hold the newest sample since carrier signal is valid a few cycles early
+  logic signed [31:0] carrier_past_samples         [2:0]; 
+  logic signed [31:0] carrier_past_intermediates   [N_FILTERS-1:0] [1:0];
+  logic signed [31:0] carrier_past_outputs         [N_FILTERS-1:0] [1:0];
+
+  typedef enum { WAITING, MODULATOR, ENVELOPE, CARRIER } state_t;
+  state_t state;
+
+  // generate (up to 12-ish) double-biquads, which takes up most of the DSP slices of the S7-50
+  // we're going to pipeline these biquads to get the most bang for our buck
+  // first we're going to filter modulator input, then envelope detect that, then filter 
+  // carrier input
+
+  // current inputs/outputs for the N_FILTERS double biquads
+  logic signed [31:0] coeffs [N_FILTERS-1:0] [9:0];
+  logic signed [31:0] x_n    [N_FILTERS-1:0];
+  logic signed [31:0] x_n1   [N_FILTERS-1:0];
+  logic signed [31:0] x_n2   [N_FILTERS-1:0];
+  logic signed [31:0] i_n1   [N_FILTERS-1:0];
+  logic signed [31:0] i_n2   [N_FILTERS-1:0];
+  logic signed [31:0] y_n1   [N_FILTERS-1:0];
+  logic signed [31:0] y_n2   [N_FILTERS-1:0];
+  logic signed [31:0] i_n    [N_FILTERS-1:0];
+  logic signed [31:0] y_n    [N_FILTERS-1:0];
 
   generate
-    for (genvar i = 0; i < FILTERS; i++) begin
-      double_biquad #(
-        .coeffs1(COEFFS[i][4:0]),
-        .coeffs2(COEFFS[i][9:5])
-      ) b1(
-        .clk_in(clk_in),
-        .rst_in(rst_in),
-        .valid_in(valid_in),
-        .sample_in(sample_in),
-        .sample_out(filtered[i]),
-        .valid_out(filtered_valid[i])
+    for (genvar i = 0; i < N_FILTERS; i++) begin
+      double_biquad bq(
+        .b0_0(coeffs[i][0]),
+        .b1_0(coeffs[i][1]),
+        .b2_0(coeffs[i][2]),
+        .a1_0(coeffs[i][3]),
+        .a2_0(coeffs[i][4]),
+        .b0_1(coeffs[i][5]),
+        .b1_1(coeffs[i][6]),
+        .b2_1(coeffs[i][7]),
+        .a1_1(coeffs[i][8]),
+        .a2_1(coeffs[i][9]),
+        .x_n(x_n[i]),
+        .x_n1(x_n1[i]),
+        .x_n2(x_n2[i]),
+        .i_n1(i_n1[i]),
+        .i_n2(i_n2[i]),
+        .y_n1(y_n1[i]),
+        .y_n2(y_n2[i]),
+        .i_n(i_n[i]),
+        .y_n(y_n[i])
       );
     end
   endgenerate
 
   always_ff @(posedge clk_in) begin
     if (rst_in) begin
-      sample_out <= 0;
-      valid_out <= 0;
+      state <= WAITING;
+
+      for (int i = 0; i < 2; i++) begin
+        modulator_past_samples[i] <= 0;
+        carrier_past_samples[i] <= 0;
+        for (int j = 0; j < N_FILTERS; j++) begin
+          modulator_past_intermediates[j][i] <= 0;
+          modulator_past_outputs[j][i] <= 0;
+          envelope_past_intermediates[j][i] <= 0;
+          envelope_past_outputs[j][i] <= 0;
+          carrier_past_intermediates[j][i] <= 0;
+          carrier_past_outputs[j][i] <= 0;
+          carrier_out[j] <= 0;
+          envelope_out[j] <= 0;
+        end
+      end
+      carrier_past_samples[2] <= 0;
     end else begin
-      if (&filtered_valid) begin
-        valid_out <= 1;
-        sample_out <= filtered[0] + filtered[1] + filtered[2] + filtered[3] + filtered[4] + filtered[5] + filtered[6] + filtered[7] + filtered[8];
-      end else if (valid_out) valid_out <= 0;
+      case (state)
+        WAITING: begin
+          valid_out <= 0;
+          if (valid_in) begin
+            state <= MODULATOR;
+            
+            // set inputs to filter modulator signal
+            for (int i = 0; i < N_FILTERS; i++) begin
+              for (int j = 0; j < 10; j++) coeffs[i][j] <= COEFFS[i][j];
+              // all filters receive the same modulator input
+              x_n[i] <= modulator_sample_in;
+              x_n1[i] <= modulator_past_samples[0];
+              x_n2[i] <= modulator_past_samples[1];
+              // intermediates and outputs vary by filter
+              i_n1[i] <= modulator_past_intermediates[i][0];
+              i_n2[i] <= modulator_past_intermediates[i][1];
+              y_n1[i] <= modulator_past_outputs[i][0];
+              y_n2[i] <= modulator_past_outputs[i][1];
+            end
+
+            // update all past sample values for modulator and carrier
+            modulator_past_samples[0] <= modulator_sample_in;
+            modulator_past_samples[1] <= modulator_past_samples[0];
+
+            carrier_past_samples[0] <= carrier_sample_in;
+            carrier_past_samples[1] <= carrier_past_samples[0];
+            carrier_past_samples[2] <= carrier_past_samples[1];
+          end
+        end
+        MODULATOR: begin
+          for (int i = 0; i < N_FILTERS; i++) begin
+            // set inputs for envelope detector
+            for (int j = 0; j < 10; j++) coeffs[i][j] <= COEFFS[9][j];
+            x_n[i] <= abs(y_n[i]);
+            x_n1[i] <= abs(modulator_past_outputs[i][0]);
+            x_n2[i] <= abs(modulator_past_outputs[i][1]);
+            i_n1[i] <= envelope_past_intermediates[i][0];
+            i_n2[i] <= envelope_past_intermediates[i][1];
+            y_n1[i] <= envelope_past_outputs[i][0];
+            y_n2[i] <= envelope_past_outputs[i][1];
+
+            // filtered results already available since combinational
+            // update all past intermediate/output values for modulator
+            modulator_past_intermediates[i][0] <= i_n[i];
+            modulator_past_intermediates[i][1] <= modulator_past_intermediates[i][0];
+            modulator_past_outputs[i][0] <= y_n[i];
+            modulator_past_outputs[i][1] <= modulator_past_outputs[i][0];
+          end
+          state <= ENVELOPE;
+        end
+        ENVELOPE: begin
+          for (int i = 0; i < N_FILTERS; i++) begin
+            // set inputs to filter carrier signal
+            for (int j = 0; j < 10; j++) coeffs[i][j] <= COEFFS[i][j];
+            x_n[i] <= carrier_past_samples[0];
+            x_n1[i] <= carrier_past_samples[1];
+            x_n2[i] <= carrier_past_samples[2];
+            i_n1[i] <= carrier_past_intermediates[i][0];
+            i_n2[i] <= carrier_past_intermediates[i][1];
+            y_n1[i] <= carrier_past_outputs[i][0];
+            y_n2[i] <= carrier_past_outputs[i][1];
+            
+            // update past results
+            envelope_past_intermediates[i][0] <= i_n[i];
+            envelope_past_intermediates[i][1] <= envelope_past_intermediates[i][0];
+            envelope_past_outputs[i][0] <= y_n[i];
+            envelope_past_outputs[i][1] <= envelope_past_outputs[i][0];
+
+            envelope_out[i] <= y_n[i];
+          end
+          state <= CARRIER;
+        end
+        CARRIER: begin
+          for (int i = 0; i < N_FILTERS; i++) begin
+            carrier_past_intermediates[i][0] <= i_n[i];
+            carrier_past_intermediates[i][1] <= carrier_past_intermediates[i][0];
+            carrier_past_outputs[i][0] <= y_n[i];
+            carrier_past_outputs[i][1] <= carrier_past_outputs[i][0];
+
+            carrier_out[i] <= y_n[i];
+          end
+
+          valid_out <= 1;
+          state <= WAITING;
+        end
+      endcase
     end
-  end
+  end 
 
 endmodule
 

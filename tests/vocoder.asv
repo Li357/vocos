@@ -74,15 +74,10 @@ coeffs(n_bands,:) = [lpf.Coefficients(1:1,1:3), lpf.Coefficients(1:1,5:6),lpf.Co
 % now write the coefficients to a file for Verilog $readmemh
 scaled_coeffs = round(vpa(coeffs) .* 2^(shift)); % more precision and apply FPA shift
 fd = fopen('../data/coeffs.mem', 'w');
-% annoying ugly for loop because matlab indexing is atrocious
 for j = 1:n_bands
-    for k = 1:10
+    for k = 1:5
         fprintf(fd, '%s', dec2hex(scaled_coeffs(j,k), 8));
-        if k < 10 
-            fprintf(fd, ' ');
-        end
     end
-    fprintf(fd, '\n');
 end
 fclose(fd);
 

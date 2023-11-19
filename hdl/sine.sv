@@ -1,12 +1,6 @@
 `timescale 1ns / 1ps
 `default_nettype none
 
-`ifdef SYNTHESIS
-`define FPATH(X) `"X`"
-`else /* ! SYNTHESIS */
-`define FPATH(X) `"data/X`"
-`endif  /* ! SYNTHESIS */
-
 module sine
   import constants::*;
 (

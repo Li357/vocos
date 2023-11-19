@@ -1,6 +1,12 @@
 `timescale 1ns / 1ps
 `default_nettype none
 
+`ifdef SYNTHESIS
+`define FPATH(X) `"X`"
+`else /* ! SYNTHESIS */
+`define FPATH(X) `"data/X`"
+`endif  /* ! SYNTHESIS */
+
 module top_level(
   input wire          clk_100mhz,
   input wire [3:0]    btn,
@@ -8,7 +14,7 @@ module top_level(
   input wire          usb_miso,
   input wire          uart_rxd,
   input wire [15:0]   sw,
-  input wire pmodb_dout,
+  input wire          pmodb_dout,
   output logic        usb_n_rst,
   output logic        usb_n_ss,
   output logic        usb_mosi,
@@ -132,24 +138,29 @@ module top_level(
     .valid_out(mic_sample_valid)
   );
 
-  // Filter banks!
-  logic signed [31:0] filtered;
-  logic filtered_sample_valid;
-
+  logic signed [31:0] carrier_channels  [N_FILTERS-1:0];
+  logic signed [31:0] envelope_channels [N_FILTERS-1:0];
+  logic filtered_valid;
   filterbank fb(
     .clk_in(clk_98_3mhz),
     .rst_in(sys_rst),
     .valid_in(mic_sample_valid),
-    .sample_in(mic_sample),
-    .sample_out(filtered),
-    .valid_out(filtered_sample_valid)
+    .carrier_sample_in(synth_out),
+    .modulator_sample_in(mic_sample),
+    .carrier_out(carrier_channels),
+    .envelope_out(envelope_channels),
+    .valid_out(filtered_valid)
   );
+
+  mixer mix(
+    
+  )
 
   // I2S2, generates an internal SCLK at 48 = 24 bits * 2 channels times
   // the sampling rate by running LRCK = 192kHz and MCLK = 96 * LRCK
   pmod_i2s2 iface(
     .clk_in(clk_i2s),
-    .valid_in(filtered_sample_valid),
+    .valid_in(filtered_valid),
     .sample_in(filtered[23:0]),
     .mclk_out(pmoda[0]),
     .lrck_out(pmoda[1]),
