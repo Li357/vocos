@@ -141,11 +141,20 @@ module top_level(
   logic signed [23:0] mic_sample_thresholded;
   assign mic_sample_thresholded = mic_sample > (1<<18) ? mic_sample : (mic_sample < -(1<<18) ? mic_sample : 0);
 
+  // We're going to run the filterbank at 98.3MHz / 8 = 48kHz * 256
+  // since our pipelined filter + mix takes at ~130 clock cycles
+  logic [2:0] clk_fb_count;
+  logic clk_fb;
+  assign clk_fb = clk_fb_count[2] == 0;
+  always_ff @(posedge clk_98_3mhz) begin
+    clk_fb_count <= clk_fb_count + 1;
+  end
+
   logic signed [31:0] carrier_channels  [7:0];
   logic signed [31:0] envelope_channels [7:0];
   logic filtered_valid;
   filterbank fb(
-    .clk_in(clk_98_3mhz),
+    .clk_in(clk_fb),
     .rst_in(sys_rst),
     .valid_in(mic_sample_valid),
     .carrier_sample_in(synth_out),
@@ -158,7 +167,7 @@ module top_level(
   logic mixed_valid;
   logic [23:0] mixed;
   mixer mix(
-    .clk_in(clk_98_3mhz),
+    .clk_in(clk_fb),
     .rst_in(sys_rst),
     .valid_in(filtered_valid),
     .carrier_channels(carrier_channels),

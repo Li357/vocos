@@ -12,23 +12,43 @@ module mixer #(parameter N_FILTERS = 8) (
   output logic valid_out
 );
 
+  typedef enum { WAITING, MULTIPLYING, SHIFTING, ADDING } state_t;
+  state_t state;
+
+  logic [$clog2(N_FILTERS)-1:0] index;
+  logic signed [63:0] temp;
+
   always_ff @(posedge clk_in) begin
     if (rst_in) begin
       mixed_out <= 0;
+      state <= WAITING;
     end else begin
-      if (valid_in) begin
-        mixed_out <= (
-          (carrier_channels[0] * (envelope_channels[0] >>> shift)) +
-          (carrier_channels[1] * (envelope_channels[1] >>> shift)) +
-          (carrier_channels[2] * (envelope_channels[2] >>> shift)) +
-          (carrier_channels[3] * (envelope_channels[3] >>> shift)) +
-          (carrier_channels[4] * (envelope_channels[4] >>> shift)) +
-          (carrier_channels[5] * (envelope_channels[5] >>> shift)) +
-          (carrier_channels[6] * (envelope_channels[6] >>> shift))
-          //(carrier_channels[7] * (envelope_channels[7] >>> shift)) 
-        );
-        valid_out <= 1;
-      end else valid_out <= 0;
+      case (state)
+        WAITING: begin
+          valid_out <= 0;
+          if (valid_in) begin
+            state <= MULTIPLYING;
+            index <= 0;
+            mixed_out <= 0;
+          end
+        end
+        MULTIPLYING: begin
+          temp <= carrier_channels[index] * envelope_channels[index];
+          state <= SHIFTING;
+        end
+        SHIFTING: begin
+          temp <= temp >>> shift;
+          state <= ADDING;
+        end
+        ADDING: begin
+          mixed_out <= mixed_out + temp;
+          index <= index + 1;
+          if (index == N_FILTERS - 1) begin
+            state <= WAITING;
+            valid_out <= 1;
+          end else state <= MULTIPLYING;
+        end
+      endcase
     end
   end
 
