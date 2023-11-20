@@ -17,7 +17,8 @@ module square
   end
 
   logic [SYNTH_WIDTH-1:0] square_val;
-  assign square_val = phase_acc[SYNTH_PHASE_ACC_BITS-1] ? 24'h800000 : 24'h7FFFFF;
+  // to match sine RMS which is +-(2^23)/sqrt(2), we're scaling the square wave too
+  assign square_val = phase_acc[SYNTH_PHASE_ACC_BITS-1] ? 24'h5A8279 : 24'hA57D86;
 
   logic [SYNTH_WIDTH-1:0] square_val_out;
   pipeline #(
