@@ -113,7 +113,7 @@ module top_level(
 
   logic [SYNTH_PHASE_ACC_BITS-1:0] phase_acc;
   switch_keyboard keyboard(
-    .sw_in(sw[15:3]),
+    .sw_in(sw[10:3]),
     .phase_acc_out(phase_acc)
   );
 
@@ -138,8 +138,10 @@ module top_level(
     .valid_out(mic_sample_valid)
   );
 
+  logic signed [23:0] mic_sample_thresholded;
+  assign mic_sample_thresholded = mic_sample > (1<<18) ? mic_sample : (mic_sample < -(1<<18) ? mic_sample : 0);
+
   logic signed [31:0] carrier_channels  [7:0];
-  //logic signed [31:0] carrier_out1;
   logic signed [31:0] envelope_channels [7:0];
   logic filtered_valid;
   filterbank fb(
@@ -147,8 +149,9 @@ module top_level(
     .rst_in(sys_rst),
     .valid_in(mic_sample_valid),
     .carrier_sample_in(synth_out),
-    .modulator_sample_in(mic_sample),
+    .modulator_sample_in(mic_sample_thresholded),
     .carrier_out(carrier_channels),
+    .envelope_out(envelope_channels),
     .valid_out(filtered_valid)
   );
 
@@ -161,7 +164,8 @@ module top_level(
     .carrier_channels(carrier_channels),
     .envelope_channels(envelope_channels),
     .mixed_out(mixed),
-    .valid_out(mixed_valid)
+    .valid_out(mixed_valid),
+    .shift(sw[15:11])
   );
 
   // I2S2, generates an internal SCLK at 48 = 24 bits * 2 channels times
@@ -219,7 +223,7 @@ module top_level(
   seven_segment_controller mssc(
     .clk_in(clk_98_3mhz),
     .rst_in(sys_rst),
-    .val_in({envelope_channels[5][31:16], carrier_channels[0][31:16]}),
+    .val_in({envelope_channels[2]}),
     .cat_out(ss_c),
     .an_out({ss0_an, ss1_an})
   );

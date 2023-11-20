@@ -5,7 +5,7 @@ shift = 20; % 2^20 multiplication for fixed-point arithmetic
 % voice frequency range in Hz split into n_bands log-spaced
 lo = 55;
 hi = 7040;
-n_bands = 9;
+n_bands = 16;
 
 bands = logspace(log10(lo), log10(hi), n_bands);
 
