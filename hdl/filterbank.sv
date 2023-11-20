@@ -5,7 +5,8 @@ function [31:0] abs(input [31:0] x);
   abs = x[31] ? -x : x;
 endfunction
 
-module filterbank #(parameter N_FILTERS = 8)
+module filterbank
+  import constants::*;
 (
   input wire clk_in,
   input wire rst_in,
@@ -17,6 +18,8 @@ module filterbank #(parameter N_FILTERS = 8)
   output logic valid_out
 );
 
+  // first N_FILTERS rows of coefficients are for bandpass filters
+  // last coefficent row is for lowpass filter
   logic signed [31:0] COEFFS [N_FILTERS:0] [9:0];
   initial $readmemh(`FPATH(coeffs.mem), COEFFS);
 
@@ -35,10 +38,8 @@ module filterbank #(parameter N_FILTERS = 8)
   typedef enum { WAITING, MODULATOR, ENVELOPE, CARRIER } state_t;
   state_t state;
 
-  // generate (up to 12-ish) double-biquads, which takes up most of the DSP slices of the S7-50
-  // we're going to pipeline these biquads to get the most bang for our buck
-  // first we're going to filter modulator input, then envelope detect that, then filter 
-  // carrier input
+  // generate N_FILTERS double-biquads for each band that do the modulator filtering, then
+  // envelope detection, then carrier filtering
 
   // current inputs/outputs for the N_FILTERS double biquads
   logic signed [31:0] coeffs [N_FILTERS-1:0] [9:0];
@@ -138,7 +139,7 @@ module filterbank #(parameter N_FILTERS = 8)
           if (&filters_valid_out) begin
             for (int i = 0; i < N_FILTERS; i++) begin
               // set inputs for envelope detector
-              for (int j = 0; j < 10; j++) coeffs[i][j] <= COEFFS[8][j];
+              for (int j = 0; j < 10; j++) coeffs[i][j] <= COEFFS[N_FILTERS][j];
               x_n[i] <= abs(y_n[i]);
               x_n1[i] <= abs(modulator_past_outputs[i][0]);
               x_n2[i] <= abs(modulator_past_outputs[i][1]);

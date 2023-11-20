@@ -1,7 +1,9 @@
 `timescale 1ns / 1ps
 `default_nettype none
 
-module mixer #(parameter N_FILTERS = 8) (
+module mixer
+  import constants::*;
+(
   input wire clk_in,
   input wire rst_in,
   input wire valid_in,
@@ -37,7 +39,7 @@ module mixer #(parameter N_FILTERS = 8) (
           state <= SHIFTING;
         end
         SHIFTING: begin
-          temp <= temp >>> shift;
+          temp <= temp >>> {shift, 1'b0};
           state <= ADDING;
         end
         ADDING: begin

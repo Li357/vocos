@@ -9,4 +9,6 @@ package constants;
   // frequency resolution, which is a cent of a half step
   parameter SYNTH_PHASE_ACC_BITS = 24;
 
+  parameter N_FILTERS = 16;
+
 endpackage
