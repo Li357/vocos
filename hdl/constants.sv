@@ -11,4 +11,6 @@ package constants;
 
   parameter N_FILTERS = 16;
 
+  parameter CLOCKS_PER_BAUD = 32; 
+
 endpackage

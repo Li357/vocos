@@ -3,8 +3,8 @@ order = 4;
 shift = 20; % 2^20 multiplication for fixed-point arithmetic
 
 % voice frequency range in Hz split into n_bands log-spaced
-lo = 55;
-hi = 7040;
+lo = 50;
+hi = 7000;
 n_bands = 17; % n_bands - 1 actual filters
 
 bands = logspace(log10(lo), log10(hi), n_bands);
@@ -15,7 +15,7 @@ bands = logspace(log10(lo), log10(hi), n_bands);
 sample = sample(1:size(vox));              % trim carrier to modulator length
 
 % plot the original
-subplot(n_bands, 1, 1);
+subplot(4, 1, 1);
 plot(vox);
 title('Original');
 xlabel('Time (s)');
@@ -33,6 +33,7 @@ lpf = designfilt("lowpassiir", ...
                   HalfPowerFrequency=100, ...
                   SampleRate=fs, ...
                   DesignMethod="butter");
+filts = [];
 
 for i = 1:(n_bands-1)
     df = designfilt("bandpassiir", ...
@@ -43,6 +44,7 @@ for i = 1:(n_bands-1)
                     DesignMethod="butter");
 
     coeffs(i,:) = [df.Coefficients(1:1,1:3), df.Coefficients(1:1,5:6), df.Coefficients(2:2,1:3), df.Coefficients(2:2,5:6)];
+    filts = [filts, df];
 
     filtered_vox = filter(df, vox);
     env_lpf = filter(lpf, abs(filtered_vox));       % rectify the signal and run thru LPF for envelope
@@ -53,36 +55,47 @@ for i = 1:(n_bands-1)
 
     unmodulated = unmodulated + filtered_vox;
 
-    subplot(n_bands, 1, i+1);
-    plot(filtered_vox);
-    title(strcat('Filter ', i));
-    xlabel('Time (s)');
-    ylabel('Amplitude');
-
-    hold on
-
-    plot(env_lpf);
-    title(strcat('Envelope ', i));
-    xlabel('Time (s)');
-    ylabel('Amplitude');
-end
-
-sound(10 * vocoded, fs); % get some gain
-
-coeffs(n_bands,:) = [lpf.Coefficients(1:1,1:3), lpf.Coefficients(1:1,5:6),lpf.Coefficients(2:2,1:3), lpf.Coefficients(2:2,5:6)];
-
-% now write the coefficients to a file for Verilog $readmemh
-scaled_coeffs = round(vpa(coeffs) .* 2^(shift)); % more precision and apply FPA shift
-fd = fopen('../data/coeffs.mem', 'w');
-% annoying ugly for loop because matlab indexing is atrocious
-for j = 1:n_bands
-    for k = 1:10
-        fprintf(fd, '%s', dec2hex(scaled_coeffs(j,k), 8));
-        if k < 10 
-            fprintf(fd, ' ');
-        end
+    if i < 4
+        subplot(4, 1, i+1);
+        plot(filtered_vox);
+        title(strcat('Band ', i));
+        xlabel('Time (s)');
+        ylabel('Amplitude');
+        % 
+        hold on
+        % 
+        plot(env_lpf);
+        title(strcat('Envelope ', i));
+        xlabel('Time (s)');
+        ylabel('Amplitude');
     end
-    fprintf(fd, '\n');
 end
-fclose(fd);
+
+%sound(10 * vocoded, fs); % get some gain
+
+%coeffs(n_bands,:) = [lpf.Coefficients(1:1,1:3), lpf.Coefficients(1:1,5:6),lpf.Coefficients(2:2,1:3), lpf.Coefficients(2:2,5:6)];
+
+% % now write the coefficients to a file for Verilog $readmemh
+% scaled_coeffs = round(vpa(coeffs) .* 2^(shift)); % more precision and apply FPA shift
+% fd = fopen('../data/coeffs.mem', 'w');
+% % annoying ugly for loop because matlab indexing is atrocious
+% for j = 1:n_bands
+%     for k = 1:10
+%         fprintf(fd, '%s', dec2hex(scaled_coeffs(j,k), 8));
+%         if k < 10 
+%             fprintf(fd, ' ');
+%         end
+%     end
+%     fprintf(fd, '\n');
+% end
+% fclose(fd);
+
+
+
+% h = fvtool(filts(1));
+% h.FrequencyScale = 'Log';
+% for i = 2:n_bands-1
+%     addfilter(h, filts(i));
+% end
+
 

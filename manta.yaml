@@ -7,11 +7,6 @@ cores:
     inputs:
       mic_level: 32
       filtered: 32
-      temp1: 32
-      temp2: 32
-      temp3: 32
-      temp4: 32
-      temp5: 32
 
 uart:
   port: "/dev/cu.usbserial-88742923013A1"

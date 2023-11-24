@@ -1,7 +1,7 @@
 `default_nettype none
 `timescale 1ns/1ps
 /*
-This module was generated with Manta v0.0.5 on 18 Nov 2023 at 11:00:12 by andrewli
+This module was generated with Manta v0.0.5 on 24 Nov 2023 at 01:46:23 by andrewli
 
 If this breaks or if you've got spicy formal verification memes, contact fischerm [at] mit.edu
 
@@ -17,12 +17,7 @@ manta manta_inst (
     .tx(tx),
     
     .mic_level(mic_level), 
-    .filtered(filtered), 
-    .temp1(temp1), 
-    .temp2(temp2), 
-    .temp3(temp3), 
-    .temp4(temp4), 
-    .temp5(temp5));
+    .filtered(filtered));
 
 */
 
@@ -32,13 +27,8 @@ module manta (
     input wire rx,
     output reg tx,
     
-    input wire signed [31:0] mic_level,
-    input wire signed [31:0] filtered,
-    input wire signed [31:0] temp1,
-    input wire signed [31:0] temp2,
-    input wire signed [31:0] temp3,
-    input wire signed [31:0] temp4,
-    input wire signed [31:0] temp5);
+    input wire [31:0] mic_level,
+    input wire [31:0] filtered);
 
 
     uart_rx #(.CLOCKS_PER_BAUD(32)) urx (
@@ -74,11 +64,6 @@ module manta (
         // ports
         .mic_level(mic_level),
         .filtered(filtered),
-        .temp1(temp1),
-        .temp2(temp2),
-        .temp3(temp3),
-        .temp4(temp4),
-        .temp5(temp5),
     
         // input port
         .addr_i(brx_voxos_io_addr),
@@ -333,11 +318,6 @@ module voxos_io (
     // ports
     input wire [31:0] mic_level,
     input wire [31:0] filtered,
-    input wire [31:0] temp1,
-    input wire [31:0] temp2,
-    input wire [31:0] temp3,
-    input wire [31:0] temp4,
-    input wire [31:0] temp5,
 
     // input port
     input wire [15:0] addr_i,
@@ -359,11 +339,6 @@ module voxos_io (
     // input probe buffers
     reg [31:0] mic_level_buf = 0;
     reg [31:0] filtered_buf = 0;
-    reg [31:0] temp1_buf = 0;
-    reg [31:0] temp2_buf = 0;
-    reg [31:0] temp3_buf = 0;
-    reg [31:0] temp4_buf = 0;
-    reg [31:0] temp5_buf = 0;
 
     // output probe buffers
     
@@ -379,11 +354,6 @@ module voxos_io (
             // update input buffers from input probes
             mic_level_buf <= mic_level;
             filtered_buf <= filtered;
-            temp1_buf <= temp1;
-            temp2_buf <= temp2;
-            temp3_buf <= temp3;
-            temp4_buf <= temp4;
-            temp5_buf <= temp5;
 
             // update output buffers from output probes
             
@@ -398,7 +368,7 @@ module voxos_io (
         valid_o <= valid_i;
 
         // check if address is valid
-        if( (valid_i) && (addr_i >= BASE_ADDR) && (addr_i <= BASE_ADDR + 14)) begin
+        if( (valid_i) && (addr_i >= BASE_ADDR) && (addr_i <= BASE_ADDR + 4)) begin
 
             // reads
             if(!rw_i) begin
@@ -409,16 +379,6 @@ module voxos_io (
                     BASE_ADDR + 2: data_o <= mic_level_buf[31:16];
                     BASE_ADDR + 3: data_o <= filtered_buf[15:0];
                     BASE_ADDR + 4: data_o <= filtered_buf[31:16];
-                    BASE_ADDR + 5: data_o <= temp1_buf[15:0];
-                    BASE_ADDR + 6: data_o <= temp1_buf[31:16];
-                    BASE_ADDR + 7: data_o <= temp2_buf[15:0];
-                    BASE_ADDR + 8: data_o <= temp2_buf[31:16];
-                    BASE_ADDR + 9: data_o <= temp3_buf[15:0];
-                    BASE_ADDR + 10: data_o <= temp3_buf[31:16];
-                    BASE_ADDR + 11: data_o <= temp4_buf[15:0];
-                    BASE_ADDR + 12: data_o <= temp4_buf[31:16];
-                    BASE_ADDR + 13: data_o <= temp5_buf[15:0];
-                    BASE_ADDR + 14: data_o <= temp5_buf[31:16];
                 endcase
             end
 
