@@ -19,6 +19,7 @@ module mixer
 
   logic [$clog2(N_FILTERS)-1:0] index;
   logic signed [63:0] temp;
+  logic signed [63:0] mixed;
 
   always_ff @(posedge clk_in) begin
     if (rst_in) begin
@@ -32,22 +33,23 @@ module mixer
             state <= MULTIPLYING;
             index <= 0;
             mixed_out <= 0;
+            mixed <= 0;
           end
         end
         MULTIPLYING: begin
           temp <= carrier_channels[index] * envelope_channels[index];
-          state <= SHIFTING;
-        end
-        SHIFTING: begin
-          temp <= temp >>> {shift, 1'b0};
           state <= ADDING;
         end
+        SHIFTING: begin
+          mixed_out <= mixed >>> shift;
+          valid_out <= 1;
+          state <= WAITING;
+        end
         ADDING: begin
-          mixed_out <= mixed_out + temp;
+          mixed <= mixed + temp;
           index <= index + 1;
           if (index == N_FILTERS - 1) begin
-            state <= WAITING;
-            valid_out <= 1;
+            state <= SHIFTING;
           end else state <= MULTIPLYING;
         end
       endcase

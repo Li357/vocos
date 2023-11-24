@@ -52,19 +52,14 @@ module top_level(
   assign rgb0 = 0;
 
   logic midi_valid;
-  logic [31:0] midi_out;
-  logic [31:0] midi_out_reg;
-  
-  uart_rx #(.CLOCKS_PER_BAUD(32)) u(
-    .clk(clk_98_3mhz),
-    .rx(uart_rxd),
-    .data_o(midi_out),
-    .valid_o(midi_valid)
+  logic [MIDI_BYTES-1:0] midi_event;
+  uart_midi_rx midi(
+    .clk_in(clk_98_3mhz),
+    .rst_in(sys_rst),
+    .rx_in(uart_rxd),
+    .valid_out(midi_valid),
+    .midi_bytes(midi_event)
   );
-
-  always_ff @(posedge clk_98_3mhz) begin
-    if (midi_valid) midi_out_reg <= midi_out;
-  end
 
   // the onboard MAX3421E USB chip can be clocked up to 26MHz
   // this is around 3MHz
@@ -119,12 +114,12 @@ module top_level(
   // assign led[15:0] = out;
 
   // Synthesizer DDS clocked at 98.3MHz / 512 = 48kHz * 4 = 192kHz
-  // logic [$clog2(SYNTH_CYCLES)-1:0] clk_synth_count;
-  // logic clk_synth;
-  // assign clk_synth = clk_synth_count[$clog2(SYNTH_CYCLES)-1] == 0;
-  // always_ff @(posedge clk_98_3mhz) begin
-  //   clk_synth_count <= clk_synth_count + 1;
-  // end
+  logic [$clog2(SYNTH_CYCLES)-1:0] clk_synth_count;
+  logic clk_synth;
+  assign clk_synth = clk_synth_count[$clog2(SYNTH_CYCLES)-1] == 0;
+  always_ff @(posedge clk_98_3mhz) begin
+    clk_synth_count <= clk_synth_count + 1;
+  end
 
   // logic [SYNTH_PHASE_ACC_BITS-1:0] phase_acc;
   // switch_keyboard keyboard(
@@ -132,29 +127,37 @@ module top_level(
   //   .phase_acc_out(phase_acc)
   // );
 
-  // logic signed [SYNTH_WIDTH-1:0] synth_out;
-  // synthesizer synth(
-  //   .clk_in(clk_synth),
-  //   .rst_in(sys_rst),
-  //   .phase_incr_in(phase_acc),
-  //   .wave_type_in(sw[2:0]),
-  //   .synth_out(synth_out)
-  // );
+  logic [SYNTH_PHASE_ACC_BITS-1:0] phase_acc;
+  midi miface(
+    .clk_in(clk_98_3mhz),
+    .rst_in(sys_rst),
+    .midi_event(midi_event),
+    .phase_incr_out(phase_acc)
+  );
 
-  // logic signed [23:0] mic_sample;
-  // logic mic_sample_valid;
-  // assign pmodb_sel = 0;
-  // pmod_mic mic(
-  //   .clk_in(clk_98_3mhz),
-  //   .ws_out(pmodb_ws),
-  //   .data_in(pmodb_dout),
-  //   .bclk_out(pmodb_bclk),
-  //   .sample_out(mic_sample),
-  //   .valid_out(mic_sample_valid)
-  // );
+  logic signed [SYNTH_WIDTH-1:0] synth_out;
+  synthesizer synth(
+    .clk_in(clk_synth),
+    .rst_in(sys_rst),
+    .phase_incr_in(phase_acc),
+    .wave_type_in(sw[2:0]),
+    .synth_out(synth_out)
+  );
 
-  // logic signed [23:0] mic_sample_thresholded;
-  // assign mic_sample_thresholded = mic_sample > (1<<18) ? mic_sample : (mic_sample < -(1<<18) ? mic_sample : 0);
+  logic signed [23:0] mic_sample;
+  logic mic_sample_valid;
+  assign pmodb_sel = 0;
+  pmod_mic mic(
+    .clk_in(clk_98_3mhz),
+    .ws_out(pmodb_ws),
+    .data_in(pmodb_dout),
+    .bclk_out(pmodb_bclk),
+    .sample_out(mic_sample),
+    .valid_out(mic_sample_valid)
+  );
+
+  //logic signed [23:0] mic_sample_thresholded;
+  //assign mic_sample_thresholded = mic_sample > (1<<18) ? mic_sample : (mic_sample < -(1<<18) ? mic_sample : 0);
 
   // We're going to run the filterbank at 98.3MHz / 2 = 48kHz * 1024
   // Our pipelined filterbank and mixer takes a variable number of cycles:
@@ -163,50 +166,50 @@ module top_level(
   // So we need ~(N_FILTERS * 35) clock cycles at least
 
   // //logic clk_fb_count;
-  // logic clk_fb;
-  // //assign clk_fb = clk_fb_count == 0;
-  // always_ff @(posedge clk_98_3mhz) begin
-  //   clk_fb <= clk_fb + 1;
-  // end
+  logic clk_fb;
+  //assign clk_fb = clk_fb_count == 0;
+  always_ff @(posedge clk_98_3mhz) begin
+    clk_fb <= clk_fb + 1;
+  end
 
-  // logic signed [31:0] carrier_channels  [N_FILTERS-1:0];
-  // logic signed [31:0] envelope_channels [N_FILTERS-1:0];
-  // logic filtered_valid;
-  // filterbank fb(
-  //   .clk_in(clk_fb),
-  //   .rst_in(sys_rst),
-  //   .valid_in(mic_sample_valid),
-  //   .carrier_sample_in(synth_out),
-  //   .modulator_sample_in(mic_sample_thresholded),
-  //   .carrier_out(carrier_channels),
-  //   .envelope_out(envelope_channels),
-  //   .valid_out(filtered_valid)
-  // );
+  logic signed [31:0] carrier_channels  [N_FILTERS-1:0];
+  logic signed [31:0] envelope_channels [N_FILTERS-1:0];
+  logic filtered_valid;
+  filterbank fb(
+    .clk_in(clk_fb),
+    .rst_in(sys_rst),
+    .valid_in(mic_sample_valid),
+    .carrier_sample_in(synth_out),
+    .modulator_sample_in(mic_sample),
+    .carrier_out(carrier_channels),
+    .envelope_out(envelope_channels),
+    .valid_out(filtered_valid)
+  );
 
-  // logic mixed_valid;
-  // logic [23:0] mixed;
-  // mixer mix(
-  //   .clk_in(clk_fb),
-  //   .rst_in(sys_rst),
-  //   .valid_in(filtered_valid),
-  //   .carrier_channels(carrier_channels),
-  //   .envelope_channels(envelope_channels),
-  //   .mixed_out(mixed),
-  //   .valid_out(mixed_valid),
-  //   .shift(sw[15:11])
-  // );
+  logic mixed_valid;
+  logic [23:0] mixed;
+  mixer mix(
+    .clk_in(clk_fb),
+    .rst_in(sys_rst),
+    .valid_in(filtered_valid),
+    .carrier_channels(carrier_channels),
+    .envelope_channels(envelope_channels),
+    .mixed_out(mixed),
+    .valid_out(mixed_valid),
+    .shift(sw[15:11])
+  );
 
   // I2S2, generates an internal SCLK at 48 = 24 bits * 2 channels times
   // the sampling rate by running LRCK = 192kHz and MCLK = 96 * LRCK
-  // pmod_i2s2 iface(
-  //   .clk_in(clk_i2s),
-  //   .valid_in(mixed_valid),
-  //   .sample_in(mixed),
-  //   .mclk_out(pmoda[0]),
-  //   .lrck_out(pmoda[1]),
-  //   .sclk_out(pmoda[2]),
-  //   .sdin_out(pmoda[3])
-  // );
+  pmod_i2s2 iface(
+    .clk_in(clk_i2s),
+    .valid_in(mixed_valid),
+    .sample_in(mixed),
+    .mclk_out(pmoda[0]),
+    .lrck_out(pmoda[1]),
+    .sclk_out(pmoda[2]),
+    .sdin_out(pmoda[3])
+  );
 
   // manta m(
   //   .clk(clk_98_3mhz),
@@ -251,7 +254,7 @@ module top_level(
   seven_segment_controller mssc(
     .clk_in(clk_98_3mhz),
     .rst_in(sys_rst),
-    .val_in(midi_out_reg),
+    .val_in(envelope_channels[5]),
     .cat_out(ss_c),
     .an_out({ss0_an, ss1_an})
   );
