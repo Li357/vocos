@@ -37,7 +37,7 @@ module mixer
           end
         end
         MULTIPLYING: begin
-          temp <= carrier_channels[index] * envelope_channels[index];
+          temp <= carrier_channels[index] * (envelope_channels[index] > 16'h4000 ? envelope_channels[index] : 0);
           state <= ADDING;
         end
         SHIFTING: begin

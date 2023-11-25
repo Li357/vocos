@@ -31,26 +31,29 @@ module midi
   logic [31:0] PITCH_BEND_FACTORS [127:0];
   initial $readmemb(`FPATH(pitchbends.mem), PITCH_BEND_FACTORS);
 
+  logic [SYNTH_PHASE_ACC_BITS-1:0] MOD_PHASES [127:0];
+  initial $readmemb(`FPATH(modphases.mem), MOD_PHASES);
+
   logic [7:0] pitch; // just support one voice at a time
   logic [7:0] pitchbend;
   logic [7:0] velocity;
   logic [7:0] mod;
 
-  logic [SYNTH_PHASE_ACC_BITS-1:0] lfo_phase_incr;
-  assign lfo_phase_incr = 
+  // logic [SYNTH_PHASE_ACC_BITS-1:0] lfo_phase_incr;
+  // assign lfo_phase_incr = MOD_PHASES[mod];
 
-  logic [SYNTH_WIDTH-1:0] lfo_out;
+  // logic signed [SYNTH_WIDTH-1:0] lfo_out;
 
-  triangle lfo(
-    .clk_in(clk_in),
-    .rst_in(rst_in),
-    .phase_incr_in(lfo_phase_incr),
-    .val_out(lfo_out)
-  );
+  // sine lfo(
+  //   .clk_in(clk_in),
+  //   .rst_in(rst_in),
+  //   .phase_incr_in(lfo_phase_incr),
+  //   .val_out(lfo_out)
+  // );
 
   logic [63:0] temp;
   assign temp = NOTES[pitch - 12] * PITCH_BEND_FACTORS[pitchbend];
-  assign phase_incr_out = pitch ? temp >>> 20 : 0; // since index 0 is B0, which is MIDI note 12
+  assign phase_incr_out = pitch ? (temp >>> 20) : 0;//+ $signed(lfo_out >>> 19) : 0; // since index 0 is B0, which is MIDI note 12
 
   logic [MIDI_BYTES-1:0] prev_event;
   logic new_event;
