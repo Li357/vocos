@@ -204,7 +204,7 @@ module top_level(
   pmod_i2s2 iface(
     .clk_in(clk_i2s),
     .valid_in(mixed_valid),
-    .sample_in(mixed),
+    .sample_in(mixed << 2),
     .mclk_out(pmoda[0]),
     .lrck_out(pmoda[1]),
     .sclk_out(pmoda[2]),
@@ -254,7 +254,7 @@ module top_level(
   seven_segment_controller mssc(
     .clk_in(clk_98_3mhz),
     .rst_in(sys_rst),
-    .val_in(envelope_channels[5]),
+    .val_in(mixed),
     .cat_out(ss_c),
     .an_out({ss0_an, ss1_an})
   );

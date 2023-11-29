@@ -39,21 +39,34 @@ module midi
   logic [7:0] velocity;
   logic [7:0] mod;
 
-  // logic [SYNTH_PHASE_ACC_BITS-1:0] lfo_phase_incr;
-  // assign lfo_phase_incr = MOD_PHASES[mod];
+  logic [7:0] attack_time;
+  logic [7:0] decay_time;
+  logic [7:0] sustain_level;
+  logic [7:0] release_time;
 
-  // logic signed [SYNTH_WIDTH-1:0] lfo_out;
+  typedef enum { WAITING, ATTACK, DECAY, SUSTAIN, RELEASE } state_t;
+  state_t state;
 
-  // sine lfo(
-  //   .clk_in(clk_in),
-  //   .rst_in(rst_in),
-  //   .phase_incr_in(lfo_phase_incr),
-  //   .val_out(lfo_out)
-  // );
+  logic [SYNTH_PHASE_ACC_BITS-1:0] lfo_phase_incr;
+  assign lfo_phase_incr = MOD_PHASES[mod];
 
-  logic [63:0] temp;
-  assign temp = NOTES[pitch - 12] * PITCH_BEND_FACTORS[pitchbend];
-  assign phase_incr_out = pitch ? (temp >>> 20) : 0;//+ $signed(lfo_out >>> 19) : 0; // since index 0 is B0, which is MIDI note 12
+  logic signed [SYNTH_WIDTH-1:0] lfo_out;
+
+  triangle lfo(
+    .clk_in(clk_in),
+    .rst_in(rst_in),
+    .phase_incr_in(lfo_phase_incr),
+    .val_out(lfo_out)
+  );
+
+  logic [SYNTH_WIDTH-1:0] lfo_out_rec = {~lfo_out[SYNTH_WIDTH-1], lfo_out[SYNTH_WIDTH-2:0]};
+
+  logic signed [63:0] pitchbent;
+  logic signed [63:0] moded;
+  assign pitchbent = NOTES[pitch - 12] * PITCH_BEND_FACTORS[pitchbend];
+  assign moded = pitchbent * PITCH_BEND_FACTORS[lfo_out_rec[23:18]];
+
+  assign phase_incr_out = pitch ? (moded >>> 20) : 0; // since index 0 is B0, which is MIDI note 12
 
   logic [MIDI_BYTES-1:0] prev_event;
   logic new_event;
@@ -63,11 +76,13 @@ module midi
     if (rst_in) begin
       pitch <= 0;
       pitchbend <= 64;
+      state <= WAITING;
     end else if (new_event) begin
       case (midi_event[23:16])
         NOTE_ON: begin
           pitch <= midi_event[15:8];
           velocity <= midi_event[7:0];
+          state <= ATTACK;
         end
         NOTE_OFF: begin
           // only turn off synth when current note is released
@@ -75,6 +90,7 @@ module midi
             pitch <= 0;
             velocity <= midi_event[7:0];
           end
+          state <= RELEASE;
         end
         PITCH_BEND: begin
           // Use MSBs of pitchbend event
@@ -82,16 +98,18 @@ module midi
         end
         CC: begin
           case (midi_event[15:8])
-            MOD_WHEEL: begin
-              mod <= midi_event[6:0];
-            end
-            ATTACK_TIME: begin
-
-            end
-            RELEASE_TIME: begin
-
-            end
+            MOD_WHEEL: mod <= midi_event[6:0];
+            ATTACK_TIME: attack_time <= midi_event[6:0];
+            DECAY_TIME: decay_time <= midi_event[6:0];
+            SUSTAIN_LEVEL: sustain_level <= midi_event[6:0];
+            RELEASE_TIME: release_time <= midi_event[6:0];
           endcase
+        end
+      endcase
+    end else begin
+      case (state)
+        ATTACK: begin
+
         end
       endcase
     end

@@ -37,11 +37,11 @@ module mixer
           end
         end
         MULTIPLYING: begin
-          temp <= carrier_channels[index] * (envelope_channels[index] > 16'h4000 ? envelope_channels[index] : 0);
+          temp <= carrier_channels[index] * envelope_channels[index];
           state <= ADDING;
         end
         SHIFTING: begin
-          mixed_out <= mixed >>> shift;
+          mixed_out <= mixed >>> {shift, 1'b0};
           valid_out <= 1;
           state <= WAITING;
         end
