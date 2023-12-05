@@ -8,3 +8,4 @@
 vivado.log
 *.rpt
 
+venv/

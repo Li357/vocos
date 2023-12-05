@@ -15,12 +15,21 @@ module top_level(
   input wire          uart_rxd,
   input wire [15:0]   sw,
   input wire          pmodb_dout,
+  input wire          pmoda_lin_sdout,
   output logic        usb_n_rst,
   output logic        usb_n_ss,
   output logic        usb_mosi,
   output logic        usb_clk,
   output logic [15:0] led,
-  output logic [7:0]  pmoda,
+
+  output logic        pmoda_lout_mclk,
+  output logic        pmoda_lout_lrck,
+  output logic        pmoda_lout_sclk,
+  output logic        pmoda_lout_sdin,
+  output logic        pmoda_lin_mclk,
+  output logic        pmoda_lin_lrck,
+  output logic        pmoda_lin_sclk,
+
   output logic        pmodb_ws,
   output logic        pmodb_bclk,
   output logic        pmodb_sel,
@@ -144,6 +153,18 @@ module top_level(
     .synth_out(synth_out)
   );
 
+  logic signed [30:0] noise;
+  lsfr31 ngen(
+    .clk_in(clk_synth),
+    .rst_in(sys_rst),
+    .data_out(noise)
+  );
+
+  logic signed [SYNTH_WIDTH-1:0] lin_out;
+
+  logic signed [SYNTH_WIDTH-1:0] carrier;
+  assign carrier = sw[10] ? lin_out : synth_out;
+
   logic signed [23:0] mic_sample;
   logic mic_sample_valid;
   assign pmodb_sel = 0;
@@ -165,50 +186,60 @@ module top_level(
   // - mixed: N_FILTERS * 3 arithmetic stages (mult, shift, add)
   // So we need ~(N_FILTERS * 35) clock cycles at least
 
-  // // //logic clk_fb_count;
-  logic clk_fb;
-  //assign clk_fb = clk_fb_count == 0;
-  always_ff @(posedge clk_98_3mhz) begin
-    clk_fb <= clk_fb + 1;
-  end
+  //logic clk_fb;
+  // always_ff @(posedge clk_98_3mhz) begin
+  //   clk_fb <= clk_fb + 1;
+  // end
 
-  logic signed [31:0] carrier_channels  [N_FILTERS-1:0];
-  logic signed [31:0] envelope_channels [N_FILTERS-1:0];
-  logic filtered_valid;
-  filterbank fb(
-    .clk_in(clk_fb),
-    .rst_in(sys_rst),
-    .valid_in(mic_sample_valid),
-    .carrier_sample_in(synth_out),
-    .modulator_sample_in(mic_sample),
-    .carrier_out(carrier_channels),
-    .envelope_out(envelope_channels),
-    .valid_out(filtered_valid)
-  );
+  // logic signed [31:0] carrier_channels  [N_FILTERS-1:0];
+  // logic signed [31:0] envelope_channels [N_FILTERS-1:0];
+  // logic filtered_valid;
+  // filterbank fb(
+  //   .clk_in(clk_fb),
+  //   .rst_in(sys_rst),
+  //   .valid_in(mic_sample_valid),
+  //   .carrier_sample_in(carrier),
+  //   .modulator_sample_in(mic_sample),
+  //   .carrier_out(carrier_channels),
+  //   .envelope_out(envelope_channels),
+  //   .valid_out(filtered_valid)
+  // );
 
-  logic mixed_valid;
-  logic [23:0] mixed;
-  mixer mix(
-    .clk_in(clk_fb),
-    .rst_in(sys_rst),
-    .valid_in(filtered_valid),
-    .carrier_channels(carrier_channels),
-    .envelope_channels(envelope_channels),
-    .mixed_out(mixed),
-    .valid_out(mixed_valid),
-    .shift(sw[15:11])
-  );
+  // logic mixed_valid;
+  // logic [23:0] mixed;
+  // mixer mix(
+  //   .clk_in(clk_fb),
+  //   .rst_in(sys_rst),
+  //   .valid_in(filtered_valid),
+  //   .carrier_channels(carrier_channels),
+  //   .envelope_channels(envelope_channels),
+  //   .mixed_out(mixed),
+  //   .valid_out(mixed_valid),
+  //   .shift(sw[15:11])
+  // );
 
   // I2S2, generates an internal SCLK at 48 = 24 bits * 2 channels times
   // the sampling rate by running LRCK = 192kHz and MCLK = 96 * LRCK
+  logic lin_valid;
+  
   pmod_i2s2 iface(
     .clk_in(clk_i2s),
-    .valid_in(mixed_valid),
-    .sample_in(mixed << 2),
-    .mclk_out(pmoda[0]),
-    .lrck_out(pmoda[1]),
-    .sclk_out(pmoda[2]),
-    .sdin_out(pmoda[3])
+    //.valid_in(mixed_valid),
+    //.sample_in(mixed << 2),
+    .valid_in(clk_synth),
+    .sample_in(noise[23:0]),
+
+    .lout_mclk_out(pmoda_lout_mclk),
+    .lout_lrck_out(pmoda_lout_lrck),
+    .lout_sclk_out(pmoda_lout_sclk),
+    .lout_sdin_out(pmoda_lout_sdin),
+
+    .lin_sdout_in(pmoda_lin_sdout),
+    .lin_mclk_out(pmoda_lin_mclk),
+    .lin_lrck_out(pmoda_lin_lrck),
+    .lin_sclk_out(pmoda_lin_sclk),
+    .sample_out(lin_out),
+    .valid_out(lin_valid)
   );
 
   // manta m(
@@ -254,7 +285,7 @@ module top_level(
   seven_segment_controller mssc(
     .clk_in(clk_98_3mhz),
     .rst_in(sys_rst),
-    .val_in(mixed),
+    .val_in(noise[23:0]),
     .cat_out(ss_c),
     .an_out({ss0_an, ss1_an})
   );

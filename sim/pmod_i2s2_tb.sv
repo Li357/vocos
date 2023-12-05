@@ -5,12 +5,13 @@ module pmod_i2s2_tb();
 
   logic clk_in;
   logic rst_in;
-  logic [23:0] sample_in;
+  logic lin_sdout_in;
+  logic [23:0] data_in = 24'b111100001010101000010001;
 
   pmod_i2s2 uut(
     .clk_in(clk_in),
     .rst_in(rst_in),
-    .sample_in(sample_in)
+    .lin_sdout_in(lin_sdout_in)
   );
 
   always begin
@@ -24,16 +25,17 @@ module pmod_i2s2_tb();
     $display("Starting");
 
     clk_in = 0;
+    #10;
     rst_in = 0;
     #20;
     rst_in = 1;
     #20;
     rst_in = 0;
-    #20;
+    #7780;
 
-    for (int i = 0; i < 32; i++) begin
-      sample_in = i;
-      #15360; // new sample every 192 cycles of mclk
+    for (int i = 0; i < 64; i++) begin
+      lin_sdout_in = data_in[i % 32];
+      #240; // new sample every 12 cycles of mclk
     end
 
     #4000;
