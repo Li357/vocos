@@ -1,6 +1,12 @@
 `timescale 1ns / 1ps
 `default_nettype none
 
+`ifdef SYNTHESIS
+`define FPATH(X) `"X`"
+`else /* ! SYNTHESIS */
+`define FPATH(X) `"data/X`"
+`endif  /* ! SYNTHESIS */
+
 module sine_tb();
 
   logic clk_in;
@@ -10,12 +16,12 @@ module sine_tb();
   sine uut(
     .clk_in(clk_in),
     .rst_in(rst_in),
-    .phase_incr_in(24'h1001_0110_0011_0000),
+    .phase_incr_in(24'd5),
     .val_out(audio)
   );
 
   always begin
-    #2600; // ~192 kHz
+    #10; // ~192 kHz
     clk_in = !clk_in;
   end
 
@@ -26,12 +32,12 @@ module sine_tb();
 
     clk_in = 0;
     rst_in = 0;
-    #5200;
+    #20;
     rst_in = 1;
-    #5200;
+    #20;
     rst_in = 0;
 
-    #5000000;
+    #50000000;
 
     $display("Finishing");
     $finish;

@@ -227,7 +227,7 @@ module top_level(
     //.valid_in(mixed_valid),
     //.sample_in(mixed << 2),
     .valid_in(clk_synth),
-    .sample_in(noise[23:0]),
+    .sample_in(synth_out),
 
     .lout_mclk_out(pmoda_lout_mclk),
     .lout_lrck_out(pmoda_lout_lrck),

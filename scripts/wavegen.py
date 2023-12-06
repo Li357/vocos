@@ -8,10 +8,9 @@ def gen_sine(samples, width):
 def write_to_mem(samples, width, file):
   with open(file, 'w') as f:
     for sample in samples:
-      print(sample)
       f.write(format(sample, f'0{width}b') + '\n')
 
 SAMPLES = 2 ** 16
-WIDTH = 24
+WIDTH = 24 
 sine = gen_sine(SAMPLES, WIDTH)
-write_to_mem(sine, WIDTH, '../data/sine.mem')
+write_to_mem(sine, WIDTH - 1, '../data/sine.mem')

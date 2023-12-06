@@ -41,10 +41,19 @@ module synthesizer
     .val_out(tri_out)
   );
 
+  logic [SYNTH_WIDTH-1:0] saw_out;
+  sawtooth sw(
+    .clk_in(clk_in),
+    .rst_in(rst_in),
+    .phase_incr_in(phase_incr_in),
+    .val_out(saw_out)
+  );
+
   always_comb begin
     case (wave_type_in)
       3'b001: synth_out = sq_out;
       3'b010: synth_out = tri_out;
+      3'b100: synth_out = saw_out;
       default: synth_out = sine_out;
     endcase
   end
