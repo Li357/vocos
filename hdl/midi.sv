@@ -52,21 +52,35 @@ module midi
 
   logic signed [SYNTH_WIDTH-1:0] lfo_out;
 
-  triangle lfo(
-    .clk_in(clk_in),
+  // Run LFO at 192kHz like synth, aka 98.3MHz / 512
+  logic [8:0] clk_lfo_count;
+  always_ff @(posedge clk_in) begin
+    clk_lfo_count <= rst_in ? 0 : clk_lfo_count + 1;
+  end
+  sine lfo(
+    .clk_in(clk_lfo_count[8]),
     .rst_in(rst_in),
     .phase_incr_in(lfo_phase_incr),
     .val_out(lfo_out)
   );
 
-  logic [SYNTH_WIDTH-1:0] lfo_out_rec = {~lfo_out[SYNTH_WIDTH-1], lfo_out[SYNTH_WIDTH-2:0]};
+  // LFO has range of [-2^23, 2^23-1], remap it onto [-2^4, 2^4]
+  logic signed [4:0] lfo_scaled;
+  assign lfo_scaled = lfo_out >>> 19;
 
   logic signed [63:0] pitchbent;
   logic signed [63:0] moded;
-  assign pitchbent = NOTES[pitch - 12] * PITCH_BEND_FACTORS[pitchbend];
-  assign moded = pitchbent * PITCH_BEND_FACTORS[lfo_out_rec[23:18]];
+  assign pitchbent = NOTES[pitch - 12] * PITCH_BEND_FACTORS[pitchbend]; // since index 0 is B0, which is MIDI note 12
+  // Map [-2^4, 2^4] to [32, 96] since 64 is no pitchbend, and index into pitchbends
+  assign moded = mod ? (pitchbent >>> 20) * PITCH_BEND_FACTORS[{~lfo_scaled[4], lfo_scaled[3:0]} + 7'd32] : pitchbent;
 
-  assign phase_incr_out = pitch ? (moded >>> 20) : 0; // since index 0 is B0, which is MIDI note 12
+  assign phase_incr_out = pitch ? (moded >>> 20) : 0;
+
+  // Run ADSR at 98.3MHz / 2^20 so that maximum attack time is, 128 times that, or ~1.4s
+  logic [19:0] adsr_count;
+  always_ff @(posedge clk_in) begin
+    adsr_count <= rst_in ? 0 : adsr_count + 1;
+  end
 
   logic [MIDI_BYTES-1:0] prev_event;
   logic new_event;
@@ -76,6 +90,7 @@ module midi
     if (rst_in) begin
       pitch <= 0;
       pitchbend <= 64;
+      vol_out <= 0;
       state <= WAITING;
     end else if (new_event) begin
       case (midi_event[23:16])
@@ -109,7 +124,7 @@ module midi
     end else begin
       case (state)
         ATTACK: begin
-
+          vol_out <= vol_out + (128 - attack_time);
         end
       endcase
     end

@@ -285,7 +285,7 @@ module top_level(
   seven_segment_controller mssc(
     .clk_in(clk_98_3mhz),
     .rst_in(sys_rst),
-    .val_in(noise[23:0]),
+    .val_in(synth_out),
     .cat_out(ss_c),
     .an_out({ss0_an, ss1_an})
   );
