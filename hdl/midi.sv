@@ -9,7 +9,7 @@ module midi
   input wire [MIDI_BYTES-1:0] midi_event,
 
   output logic [SYNTH_PHASE_ACC_BITS-1:0] phase_incr_out,
-  output logic [4:0] vol_out
+  output logic [8:0] vol_out
 );
 
   // All MIDI messages are on channel 0
@@ -36,7 +36,6 @@ module midi
 
   logic [7:0] pitch; // just support one voice at a time
   logic [7:0] pitchbend;
-  logic [7:0] velocity;
   logic [7:0] mod;
 
   logic [7:0] attack_time;
@@ -96,16 +95,13 @@ module midi
       case (midi_event[23:16])
         NOTE_ON: begin
           pitch <= midi_event[15:8];
-          velocity <= midi_event[7:0];
           state <= ATTACK;
         end
         NOTE_OFF: begin
           // only turn off synth when current note is released
           if (midi_event[15:8] == pitch) begin
-            pitch <= 0;
-            velocity <= midi_event[7:0];
+            state <= RELEASE;
           end
-          state <= RELEASE;
         end
         PITCH_BEND: begin
           // Use MSBs of pitchbend event
@@ -121,10 +117,28 @@ module midi
           endcase
         end
       endcase
-    end else begin
+    // Otherwise, update the envelope according the ADSR clock which is REALLY slow to allow for
+    // envelope times of up to 1 second
+    end else if (adsr_count[19]) begin
       case (state)
         ATTACK: begin
-          vol_out <= vol_out + (128 - attack_time);
+          if (vol_out >= 127) begin
+            vol_out <= 127;
+            state <= DECAY;
+          end else vol_out <= vol_out + (128 - attack_time);
+        end
+        DECAY: begin
+          if (vol_out <= sustain_level) begin
+            vol_out <= sustain_level;
+            state <= SUSTAIN;
+          end else vol_out <= vol_out - (128 - decay_time);
+        end
+        RELEASE: begin
+          if (vol_out <= 128 - release_time) begin
+            vol_out <= 0;
+            pitch <= 0;
+            state <= WAITING;
+          end else vol_out <= vol_out - (128 - release_time);
         end
       endcase
     end

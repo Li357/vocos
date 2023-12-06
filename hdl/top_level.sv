@@ -136,12 +136,15 @@ module top_level(
   //   .phase_acc_out(phase_acc)
   // );
 
+  logic [7:0] midi_vol;
+
   logic [SYNTH_PHASE_ACC_BITS-1:0] phase_acc;
   midi miface(
     .clk_in(clk_98_3mhz),
     .rst_in(sys_rst),
     .midi_event(midi_event),
-    .phase_incr_out(phase_acc)
+    .phase_incr_out(phase_acc),
+    .vol_out(midi_vol)
   );
 
   logic signed [SYNTH_WIDTH-1:0] synth_out;
@@ -218,6 +221,10 @@ module top_level(
   //   .shift(sw[15:11])
   // );
 
+  logic signed [SYNTH_WIDTH-1:0] synth_adsr;
+  assign synth_adsr = (synth_out * midi_vol) >>> 8;
+
+
   // I2S2, generates an internal SCLK at 48 = 24 bits * 2 channels times
   // the sampling rate by running LRCK = 192kHz and MCLK = 96 * LRCK
   logic lin_valid;
@@ -227,7 +234,7 @@ module top_level(
     //.valid_in(mixed_valid),
     //.sample_in(mixed << 2),
     .valid_in(clk_synth),
-    .sample_in(synth_out),
+    .sample_in(synth_adsr),
 
     .lout_mclk_out(pmoda_lout_mclk),
     .lout_lrck_out(pmoda_lout_lrck),
