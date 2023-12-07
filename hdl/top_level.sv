@@ -156,12 +156,12 @@ module top_level(
     .synth_out(synth_out)
   );
 
-  logic signed [30:0] noise;
-  lsfr31 ngen(
-    .clk_in(clk_synth),
-    .rst_in(sys_rst),
-    .data_out(noise)
-  );
+  // logic signed [30:0] noise;
+  // lsfr31 ngen(
+  //   .clk_in(clk_synth),
+  //   .rst_in(sys_rst),
+  //   .data_out(noise)
+  // );
 
   logic signed [SYNTH_WIDTH-1:0] lin_out;
 
@@ -234,7 +234,7 @@ module top_level(
     //.valid_in(mixed_valid),
     //.sample_in(mixed << 2),
     .valid_in(clk_synth),
-    .sample_in(synth_adsr),
+    .sample_in(synth_out),
 
     .lout_mclk_out(pmoda_lout_mclk),
     .lout_lrck_out(pmoda_lout_lrck),

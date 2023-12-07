@@ -3,6 +3,9 @@
 
 module midi
   import constants::*;
+#(
+  parameter ADSR_BITS = 20 // bits for ADSR counter
+)
 (
   input wire clk_in,
   input wire rst_in,
@@ -72,11 +75,12 @@ module midi
   assign pitchbent = NOTES[pitch - 12] * PITCH_BEND_FACTORS[pitchbend]; // since index 0 is B0, which is MIDI note 12
   // Map [-2^4, 2^4] to [32, 96] since 64 is no pitchbend, and index into pitchbends
   assign moded = mod ? (pitchbent >>> 20) * PITCH_BEND_FACTORS[{~lfo_scaled[4], lfo_scaled[3:0]} + 7'd32] : pitchbent;
-
   assign phase_incr_out = pitch ? (moded >>> 20) : 0;
 
   // Run ADSR at 98.3MHz / 2^20 so that maximum attack time is, 128 times that, or ~1.4s
-  logic [19:0] adsr_count;
+  logic [ADSR_BITS-1:0] adsr_count;
+  logic clk_adsr;
+  assign clk_adsr = adsr_count == 0;
   always_ff @(posedge clk_in) begin
     adsr_count <= rst_in ? 0 : adsr_count + 1;
   end
@@ -87,10 +91,15 @@ module midi
 
   always_ff @(posedge clk_in) begin
     if (rst_in) begin
-      pitch <= 0;
+      pitch <= 12;
+      mod <= 0;
       pitchbend <= 64;
       vol_out <= 0;
       state <= WAITING;
+      attack_time <= 0;
+      decay_time <= 0;
+      sustain_level <= 127;
+      release_time <= 0;
     end else if (new_event) begin
       case (midi_event[23:16])
         NOTE_ON: begin
@@ -119,7 +128,7 @@ module midi
       endcase
     // Otherwise, update the envelope according the ADSR clock which is REALLY slow to allow for
     // envelope times of up to 1 second
-    end else if (adsr_count[19]) begin
+    end else if (clk_adsr) begin
       case (state)
         ATTACK: begin
           if (vol_out >= 127) begin

@@ -40,17 +40,17 @@ module mixer
           temp <= carrier_channels[index] * envelope_channels[index];
           state <= ADDING;
         end
-        SHIFTING: begin
-          mixed_out <= mixed >>> {shift, 1'b0};
-          valid_out <= 1;
-          state <= WAITING;
-        end
         ADDING: begin
           mixed <= mixed + temp;
           index <= index + 1;
           if (index == N_FILTERS - 1) begin
             state <= SHIFTING;
           end else state <= MULTIPLYING;
+        end
+        SHIFTING: begin
+          mixed_out <= mixed >>> {shift, 1'b0};
+          valid_out <= 1;
+          state <= WAITING;
         end
       endcase
     end
