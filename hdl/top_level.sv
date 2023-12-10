@@ -132,7 +132,7 @@ module top_level(
 
   // logic [SYNTH_PHASE_ACC_BITS-1:0] phase_acc;
   // switch_keyboard keyboard(
-  //   .sw_in(sw[10:3]),
+  //   .sw_in(sw[9:3]),
   //   .phase_acc_out(phase_acc)
   // );
 
@@ -163,12 +163,7 @@ module top_level(
   //   .data_out(noise)
   // );
 
-  logic signed [SYNTH_WIDTH-1:0] lin_out;
-
-  logic signed [SYNTH_WIDTH-1:0] carrier;
-  assign carrier = sw[10] ? lin_out : synth_out;
-
-  logic signed [23:0] mic_sample;
+  logic signed [SYNTH_WIDTH-1:0] mic_sample;
   logic mic_sample_valid;
   assign pmodb_sel = 0;
   pmod_mic mic(
@@ -180,6 +175,14 @@ module top_level(
     .valid_out(mic_sample_valid)
   );
 
+  logic signed [SYNTH_WIDTH-1:0] lin_out;
+  logic lin_valid;
+
+  logic signed [SYNTH_WIDTH-1:0] modulator;
+  logic modulator_valid;
+  assign modulator = sw[10] ? lin_out : mic_sample;
+  assign modulator_valid = sw[10] ? lin_valid : mic_sample_valid;
+
   //logic signed [23:0] mic_sample_thresholded;
   //assign mic_sample_thresholded = mic_sample > (1<<18) ? mic_sample : (mic_sample < -(1<<18) ? mic_sample : 0);
 
@@ -189,52 +192,50 @@ module top_level(
   // - mixed: N_FILTERS * 3 arithmetic stages (mult, shift, add)
   // So we need ~(N_FILTERS * 35) clock cycles at least
 
-  //logic clk_fb;
-  // always_ff @(posedge clk_98_3mhz) begin
-  //   clk_fb <= clk_fb + 1;
-  // end
+  logic clk_fb;
+  always_ff @(posedge clk_98_3mhz) begin
+    clk_fb <= clk_fb + 1;
+  end
 
-  // logic signed [31:0] carrier_channels  [N_FILTERS-1:0];
-  // logic signed [31:0] envelope_channels [N_FILTERS-1:0];
-  // logic filtered_valid;
-  // filterbank fb(
-  //   .clk_in(clk_fb),
-  //   .rst_in(sys_rst),
-  //   .valid_in(mic_sample_valid),
-  //   .carrier_sample_in(carrier),
-  //   .modulator_sample_in(mic_sample),
-  //   .carrier_out(carrier_channels),
-  //   .envelope_out(envelope_channels),
-  //   .valid_out(filtered_valid)
-  // );
+  logic signed [31:0] carrier_channels  [N_FILTERS-1:0];
+  logic signed [31:0] envelope_channels [N_FILTERS-1:0];
+  logic filtered_valid;
+  filterbank fb(
+    .clk_in(clk_fb),
+    .rst_in(sys_rst),
+    .valid_in(mic_sample_valid),
+    .carrier_sample_in(synth_out),
+    .modulator_sample_in(mic_sample),
+    .carrier_out(carrier_channels),
+    .envelope_out(envelope_channels),
+    .valid_out(filtered_valid)
+  );
 
-  // logic mixed_valid;
-  // logic [23:0] mixed;
-  // mixer mix(
-  //   .clk_in(clk_fb),
-  //   .rst_in(sys_rst),
-  //   .valid_in(filtered_valid),
-  //   .carrier_channels(carrier_channels),
-  //   .envelope_channels(envelope_channels),
-  //   .mixed_out(mixed),
-  //   .valid_out(mixed_valid),
-  //   .shift(sw[15:11])
-  // );
+  logic mixed_valid;
+  logic [23:0] mixed;
+  mixer mix(
+    .clk_in(clk_fb),
+    .rst_in(sys_rst),
+    .valid_in(filtered_valid),
+    .carrier_channels(carrier_channels),
+    .envelope_channels(envelope_channels),
+    .mixed_out(mixed),
+    .valid_out(mixed_valid),
+    .shift(sw[15:11])
+  );
 
-  logic signed [SYNTH_WIDTH-1:0] synth_adsr;
-  assign synth_adsr = (synth_out * midi_vol) >>> 8;
+  // logic signed [SYNTH_WIDTH-1:0] synth_adsr;
+  // assign synth_adsr = (synth_out * midi_vol) >>> 8;
 
 
   // I2S2, generates an internal SCLK at 48 = 24 bits * 2 channels times
   // the sampling rate by running LRCK = 192kHz and MCLK = 96 * LRCK
-  logic lin_valid;
-  
   pmod_i2s2 iface(
     .clk_in(clk_i2s),
-    //.valid_in(mixed_valid),
-    //.sample_in(mixed << 2),
-    .valid_in(clk_synth),
-    .sample_in(synth_out),
+    // .valid_in(1'b1),
+    // .sample_in(lin_out),
+    .valid_in(mixed_valid),
+    .sample_in(mixed),
 
     .lout_mclk_out(pmoda_lout_mclk),
     .lout_lrck_out(pmoda_lout_lrck),
@@ -288,11 +289,18 @@ module top_level(
   // assign spkl = audio_out;
   // assign spkr = audio_out;
 
+  // logic [10:0] count;
+  // logic signed [SYNTH_WIDTH-1:0] lin_out_reg;
+  // always_ff @(posedge clk_98_3mhz) begin
+  //   count <= sys_rst ? 0 : count + 1;
+  //   if (count == 0) lin_out_reg <= lin_out;
+  // end
+
   logic [6:0] ss_c;
   seven_segment_controller mssc(
     .clk_in(clk_98_3mhz),
     .rst_in(sys_rst),
-    .val_in(synth_out),
+    .val_in(lin_out),
     .cat_out(ss_c),
     .an_out({ss0_an, ss1_an})
   );

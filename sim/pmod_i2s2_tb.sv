@@ -11,7 +11,8 @@ module pmod_i2s2_tb();
   pmod_i2s2 uut(
     .clk_in(clk_in),
     .rst_in(rst_in),
-    .lin_sdout_in(lin_sdout_in)
+    .lin_sdout_in(lin_sdout_in),
+    .valid_in(1'b1)
   );
 
   always begin

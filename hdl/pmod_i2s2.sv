@@ -67,38 +67,35 @@ module pmod_i2s2
 
   // LINE IN
 
+  logic [SYNTH_WIDTH-1:0] sample_out_reg;
   logic [$clog2(SYNTH_WIDTH)-1:0] sample_out_index;
+  assign lin_mclk_out = lout_mclk_out;
+  assign lin_sclk_out = lout_sclk_out;
 
-  // run line in mclk at 36.864MHz / 2 = 384 * 48kHz
-  always_ff @(posedge clk_in) begin
-    lin_mclk_out <= rst_in ? 0 : !lin_mclk_out;
-  end
-
-  // run sclk at 36.864MHz / 12 = 64 * 48kHz
-  localparam LIN_SCLK_CYCLES = 12;
-  logic [$clog2(LIN_SCLK_CYCLES)-1:0] lin_sclk_count;
-  assign lin_sclk_out = lin_sclk_count < 6;
-  always_ff @(posedge clk_in) begin
+  logic [$clog2(LOUT_LRCK_CYCLES)-1:0] lin_lrck_count;
+  assign lin_lrck_out = lin_lrck_count >= 24;
+  always_ff @(negedge lin_sclk_out or posedge rst_in) begin
     if (rst_in) begin
-      lin_sclk_count <= 0;
-      sample_out_index <= 0;
-    end else lin_sclk_count <= lin_sclk_count < 11 ? lin_sclk_count + 1 : 0;
-  end
-
-  // run lrck at 48kHz
-  localparam LIN_LRCK_CYCLES = 64;
-  logic [$clog2(LIN_LRCK_CYCLES)-1:0] lin_lrck_count;
-  assign lin_lrck_out = lin_lrck_count[$clog2(LIN_LRCK_CYCLES)-1] == 0;
-  always_ff @(negedge lin_sclk_out) begin
-    lin_lrck_count <= rst_in ? 0 : lin_lrck_count + 1;
-    sample_out_index <= lin_lrck_count == 0 || lin_lrck_count == 32 ? 0 : sample_out_index + 1;
+      lin_lrck_count <= 0;
+      sample_out_index <= 23;
+    end else begin
+      lin_lrck_count <= lin_lrck_count == 47 ? 0 : lin_lrck_count + 1;
+      sample_out_index <= sample_out_index == 23 ? 0 : sample_out_index + 1;
+    end
   end
 
   always_ff @(posedge lin_sclk_out) begin
     if (valid_out) valid_out <= 0;
-    if (sample_out_index < SYNTH_WIDTH) begin
-      sample_out[SYNTH_WIDTH - 1 - sample_out_index] <= lin_sdout_in;
-      if (sample_out_index == SYNTH_WIDTH - 1) valid_out <= 1;
+    if (rst_in) begin
+      sample_out <= 0;
+      sample_out_reg <= 0;
+      valid_out <= 0;
+    end else begin
+      sample_out_reg[SYNTH_WIDTH - 1 - sample_out_index] <= lin_sdout_in;
+      if (sample_out_index == SYNTH_WIDTH - 1) begin
+        valid_out <= 1;
+        sample_out <= sample_out_reg;
+      end
     end
   end
 
