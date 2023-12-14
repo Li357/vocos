@@ -8,7 +8,7 @@ module pmod_i2s2
   input wire rst_in,
   input wire valid_in,
   input wire lin_sdout_in,
-  input wire [SYNTH_WIDTH-1:0] sample_in,
+  input wire signed [SYNTH_WIDTH-1:0] sample_in,
   output logic lout_mclk_out,
   output logic lout_lrck_out,
   output logic lout_sclk_out,
@@ -18,13 +18,15 @@ module pmod_i2s2
   output logic lin_mclk_out,
   output logic lin_lrck_out,
   output logic lin_sclk_out,
-  output logic [SYNTH_WIDTH-1:0] sample_out
+  output logic signed [SYNTH_WIDTH-1:0] sample_out
 );
 
   typedef enum { WAITING, TXING } state_t;
   state_t state;
 
   // LINE OUT
+
+  logic signed [SYNTH_WIDTH-1:0] sample_in_reg;
 
   // run line out mclk at ~36.864MHz
   assign lout_mclk_out = clk_in;
@@ -51,26 +53,32 @@ module pmod_i2s2
     end else begin
       case (state)
         WAITING: begin
-          if (valid_in) state <= TXING;
+          if (valid_in) begin
+            state <= TXING;
+            sample_in_reg <= sample_in;
+          end
         end
         TXING: begin
           lout_lrck_count <= lout_lrck_count == 47 ? 0 : lout_lrck_count + 1;
           sample_index <= sample_index == 23 ? 0 : sample_index + 1;
+          if (lout_lrck_count == 47) sample_in_reg <= sample_in;
         end
       endcase
     end
   end
 
   always_ff @(negedge lout_sclk_out) begin
-    if (state == TXING) lout_sdin_out <= sample_in[SYNTH_WIDTH - 1 - sample_index];
+    if (state == TXING) lout_sdin_out <= sample_in_reg[SYNTH_WIDTH - 1 - sample_index];
   end
 
   // LINE IN
 
-  logic [SYNTH_WIDTH-1:0] sample_out_reg;
   logic [$clog2(SYNTH_WIDTH)-1:0] sample_out_index;
   assign lin_mclk_out = lout_mclk_out;
   assign lin_sclk_out = lout_sclk_out;
+
+  logic signed [SYNTH_WIDTH-1:0] left_sample_out;
+  logic signed [SYNTH_WIDTH-1:0] right_sample_out;
 
   logic [$clog2(LOUT_LRCK_CYCLES)-1:0] lin_lrck_count;
   assign lin_lrck_out = lin_lrck_count >= 24;
@@ -84,17 +92,21 @@ module pmod_i2s2
     end
   end
 
-  always_ff @(posedge lin_sclk_out) begin
+  always_ff @(negedge lin_sclk_out) begin
     if (valid_out) valid_out <= 0;
     if (rst_in) begin
       sample_out <= 0;
-      sample_out_reg <= 0;
       valid_out <= 0;
     end else begin
-      sample_out_reg[SYNTH_WIDTH - 1 - sample_out_index] <= lin_sdout_in;
-      if (sample_out_index == SYNTH_WIDTH - 1) begin
+      // R is when lin_lrck_out is HIGH
+      if (lin_lrck_out)
+        right_sample_out[SYNTH_WIDTH - 1 - sample_out_index] <= lin_sdout_in;
+      else
+        left_sample_out[SYNTH_WIDTH - 1 - sample_out_index] <= lin_sdout_in;
+
+      if (sample_out_index == SYNTH_WIDTH - 1 && lin_lrck_out) begin
         valid_out <= 1;
-        sample_out <= sample_out_reg;
+        sample_out <= left_sample_out;
       end
     end
   end

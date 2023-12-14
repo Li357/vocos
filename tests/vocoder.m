@@ -5,11 +5,11 @@ shift = 20; % 2^20 multiplication for fixed-point arithmetic
 % voice frequency range in Hz split into n_filters + 1 log-spaced
 lo = 50;
 hi = 7000;
-n_filters = 16;
+n_filters = 28;
 
-save_coeffs = false;
+save_coeffs = true;
 show_filter_response = false;
-hear_output = true;
+hear_output = false;
 show_envelopes = false;
 show_fft = false;
 
@@ -119,7 +119,7 @@ if save_coeffs
     scaled_coeffs = round(vpa(coeffs) .* 2^(shift)); % more precision and apply FPA shift
     fd = fopen('../data/coeffs.mem', 'w');
     % annoying ugly for loop because matlab indexing is atrocious
-    for j = 1:n_bands
+    for j = 1:n_filters+1
         for k = 1:10
             fprintf(fd, '%s', dec2hex(scaled_coeffs(j,k), 8));
             if k < 10

@@ -41,10 +41,10 @@ module midi
   logic [7:0] pitchbend;
   logic [7:0] mod;
 
-  logic [7:0] attack_time;
-  logic [7:0] decay_time;
-  logic [7:0] sustain_level;
-  logic [7:0] release_time;
+  logic [8:0] attack_incr;
+  logic [8:0] decay_incr;
+  logic [8:0] sustain_level;
+  logic [8:0] release_incr;
 
   typedef enum { WAITING, ATTACK, DECAY, SUSTAIN, RELEASE } state_t;
   state_t state;
@@ -91,15 +91,15 @@ module midi
 
   always_ff @(posedge clk_in) begin
     if (rst_in) begin
-      pitch <= 12;
+      pitch <= 0;
       mod <= 0;
       pitchbend <= 64;
       vol_out <= 0;
       state <= WAITING;
-      attack_time <= 0;
-      decay_time <= 0;
+      attack_incr <= 127;
+      decay_incr <= 127;
       sustain_level <= 127;
-      release_time <= 0;
+      release_incr <= 127;
     end else if (new_event) begin
       case (midi_event[23:16])
         NOTE_ON: begin
@@ -119,35 +119,37 @@ module midi
         CC: begin
           case (midi_event[15:8])
             MOD_WHEEL: mod <= midi_event[6:0];
-            ATTACK_TIME: attack_time <= midi_event[6:0];
-            DECAY_TIME: decay_time <= midi_event[6:0];
+            ATTACK_TIME: attack_incr <= midi_event[6:0] == 0 ? 127 : 128 - midi_event[6:0];
+            DECAY_TIME: decay_incr <= midi_event[6:0] == 0 ? 127 : 128 - midi_event[6:0];
             SUSTAIN_LEVEL: sustain_level <= midi_event[6:0];
-            RELEASE_TIME: release_time <= midi_event[6:0];
+            RELEASE_TIME: release_incr <= midi_event[6:0] == 0 ? 127 : 128 - midi_event[6:0];
           endcase
         end
       endcase
     // Otherwise, update the envelope according the ADSR clock which is REALLY slow to allow for
     // envelope times of up to 1 second
-    end else if (clk_adsr) begin
+    end
+    
+    if (clk_adsr) begin
       case (state)
         ATTACK: begin
-          if (vol_out >= 127) begin
+          if (vol_out >= 127 - attack_incr) begin
             vol_out <= 127;
             state <= DECAY;
-          end else vol_out <= vol_out + (128 - attack_time);
+          end else vol_out <= vol_out + attack_incr;
         end
         DECAY: begin
-          if (vol_out <= sustain_level) begin
+          if (vol_out <= sustain_level + decay_incr) begin
             vol_out <= sustain_level;
             state <= SUSTAIN;
-          end else vol_out <= vol_out - (128 - decay_time);
+          end else vol_out <= vol_out - decay_incr;
         end
         RELEASE: begin
-          if (vol_out <= 128 - release_time) begin
+          if (vol_out <= release_incr) begin
             vol_out <= 0;
             pitch <= 0;
             state <= WAITING;
-          end else vol_out <= vol_out - (128 - release_time);
+          end else vol_out <= vol_out - release_incr;
         end
       endcase
     end
