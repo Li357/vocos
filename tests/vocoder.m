@@ -5,7 +5,7 @@ shift = 20; % 2^20 multiplication for fixed-point arithmetic
 % voice frequency range in Hz split into n_filters + 1 log-spaced
 lo = 50;
 hi = 7000;
-n_filters = 28;
+n_filters = 16;
 
 save_coeffs = true;
 show_filter_response = false;

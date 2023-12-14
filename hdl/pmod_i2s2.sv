@@ -61,7 +61,7 @@ module pmod_i2s2
         TXING: begin
           lout_lrck_count <= lout_lrck_count == 47 ? 0 : lout_lrck_count + 1;
           sample_index <= sample_index == 23 ? 0 : sample_index + 1;
-          if (lout_lrck_count == 47) sample_in_reg <= sample_in;
+          if (lout_lrck_count == 23) sample_in_reg <= sample_in;
         end
       endcase
     end

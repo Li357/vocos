@@ -151,6 +151,7 @@ module top_level(
   synthesizer synth(
     .clk_in(clk_synth),
     .rst_in(sys_rst),
+    .vol_in(midi_vol),
     .phase_incr_in(phase_acc),
     .wave_type_in(sw[2:0]),
     .synth_out(synth_out)
@@ -178,10 +179,10 @@ module top_level(
   logic signed [SYNTH_WIDTH-1:0] lin_out;
   logic lin_valid;
 
-  // logic signed [SYNTH_WIDTH-1:0] modulator;
-  // logic modulator_valid;
-  // assign modulator = sw[10] ? lin_out : mic_sample;
-  // assign modulator_valid = sw[10] ? lin_valid : mic_sample_valid;
+  logic signed [SYNTH_WIDTH-1:0] modulator;
+  logic modulator_valid;
+  assign modulator = sw[10] ? lin_out : mic_sample;
+  assign modulator_valid = sw[10] ? lin_valid : mic_sample_valid;
   logic source_changed;
 
   always_ff @(posedge clk_98_3mhz) begin
@@ -204,47 +205,40 @@ module top_level(
     clk_fb <= clk_fb + 1;
   end
 
-  // logic signed [31:0] carrier_channels  [N_FILTERS-1:0];
-  // logic signed [31:0] envelope_channels [N_FILTERS-1:0];
-  // logic filtered_valid;
-  // filterbank fb(
-  //   .clk_in(clk_fb),
-  //   .rst_in(sys_rst),
-  //   //.rst_in(source_changed),
-  //   .valid_in(mic_sample_valid),
-  //   .carrier_sample_in(synth_out),
-  //   .modulator_sample_in(mic_sample),
-  //   .carrier_out(carrier_channels),
-  //   .envelope_out(envelope_channels),
-  //   .valid_out(filtered_valid)
-  // );
+  logic signed [31:0] carrier_channels  [N_FILTERS-1:0];
+  logic signed [31:0] envelope_channels [N_FILTERS-1:0];
+  logic filtered_valid;
+  filterbank fb(
+    .clk_in(clk_fb),
+    .rst_in(source_changed),
+    .valid_in(modulator_valid),
+    .carrier_sample_in(synth_out),
+    .modulator_sample_in(modulator),
+    .carrier_out(carrier_channels),
+    .envelope_out(envelope_channels),
+    .valid_out(filtered_valid)
+  );
 
-  // logic mixed_valid;
-  // logic [23:0] mixed;
-  // mixer mix(
-  //   .clk_in(clk_fb),
-  //   .rst_in(sys_rst),
-  //   .valid_in(filtered_valid),
-  //   .carrier_channels(carrier_channels),
-  //   .envelope_channels(envelope_channels),
-  //   .mixed_out(mixed),
-  //   .valid_out(mixed_valid),
-  //   .shift(sw[15:11])
-  // );
-
-  logic signed [SYNTH_WIDTH + 8:0] synth_adsr_temp;
-  assign synth_adsr_temp = synth_out * midi_vol;
-
-  logic signed [SYNTH_WIDTH-1:0] synth_adsr;
-  assign synth_adsr = synth_adsr_temp >>> 7;
+  logic mixed_valid;
+  logic [23:0] mixed;
+  mixer mix(
+    .clk_in(clk_fb),
+    .rst_in(sys_rst),
+    .valid_in(filtered_valid),
+    .carrier_channels(carrier_channels),
+    .envelope_channels(envelope_channels),
+    .mixed_out(mixed),
+    .valid_out(mixed_valid),
+    .shift(sw[15:11])
+  );
 
   // I2S2, generates an internal SCLK at 48 = 24 bits * 2 channels times
   // the sampling rate by running LRCK = 192kHz and MCLK = 96 * LRCK
   pmod_i2s2 iface(
     .clk_in(clk_i2s),
-    //.rst_in(source_changed),
-    .valid_in(clk_synth),
-    .sample_in(synth_adsr),
+    .rst_in(source_changed),
+    .valid_in(mixed_valid),
+    .sample_in(mixed),
 
     .lout_mclk_out(pmoda_lout_mclk),
     .lout_lrck_out(pmoda_lout_lrck),
@@ -302,7 +296,7 @@ module top_level(
   seven_segment_controller mssc(
     .clk_in(clk_98_3mhz),
     .rst_in(sys_rst),
-    .val_in(mic_sample),
+    .val_in(synth_out),
     .cat_out(ss_c),
     .an_out({ss0_an, ss1_an})
   );
